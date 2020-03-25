@@ -16,29 +16,47 @@ import viewerstate.utils as su
 def createSphereGeometry():
     geo = hou.Geometry()
     sphere_verb = hou.sopNodeTypeCategory().nodeVerb("sphere")
+    hou.SopVerb.setParms(sphere_verb, {'type' : 2})
+    hou.SopVerb.execute(sphere_verb, geo, [])
+    return geo
+
+def createLineGeometry():
+    geo = hou.Geometry()
+    line_verb = hou.sopNodeTypeCategory().nodeVerb("line")
+    hou.SopVerb.setParms(line_verb, {'dir': (0, 0, 1)})
+    hou.SopVerb.execute(line_verb, geo, [])
+    return geo
 
 class State(object):
     msg = "Click and drag on the geometry to measure it."
     default_font_size = 30.0
-    default_color = "green"
     default_text = "default text"
+    pink = hou.Vector4(1.0, 0.4745, 0.77647, 1)
+    yellow = hou.Vector4(0.9450, 0.9804, 0.54902, 1)
+    purple = hou.Vector4(0.74118, 0.57647, 0.97647, 1)
+    green = hou.Vector4(0.31372, 0.980392, 0.48235, 1)
 
     def __init__(self, state_name, scene_viewer):
         self.state_name = state_name
         self.scene_viewer = scene_viewer
+        sphere = createSphereGeometry()
+        line = createLineGeometry()
+        self.initial_spot_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Face, "initial_spot", sphere)
+        self.current_spot_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Face, "current_spot", sphere)
+        self.line_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Line, "line", line)
         self.text_drawable = hou.TextDrawable(scene_viewer, "text_drawable")
-        self.initial_spot_drawable = hou.SimpleDrawable(scene_viewer, hou.drawablePrimitive.Sphere, "initial_spot")
-        self.current_spot_drawable = hou.SimpleDrawable(scene_viewer, hou.drawablePrimitive.Sphere, "current_spot")
-        self.initial_spot_drawable.setDisplayMode(hou.drawableDisplayMode.CurrentViewportMode)
-        self.current_spot_drawable.setDisplayMode(hou.drawableDisplayMode.CurrentViewportMode)
-        self.text_params = {'text': None, 'translate' : hou.Vector3(0.0, 0.0, 0.0)}
+        self.text_params = {'text': None, 'translate': hou.Vector3(0.0, 0.0, 0.0)}
+        self.spot_params = {'color1': State.yellow, 'fade_factor': 0.5}
+        self.line_params = {'line_width': 4.0, 'style': (10.0, 5.0), 'color1': State.yellow,  'fade_factor':0.3}
         self.initial_pos = hou.Vector3(0.0, 0.0, 0.0)
         self.current_pos = hou.Vector3(0.0, 0.0, 0.0)
+        self.spot_size = 0.004
         self.measurement = 0.0
         self.geometry = None
         self.current_node = None
-        self.font_color = State.default_color
         self.font_size = State.default_font_size
+        self.font_color = "#50fa7b"
+#        self.font_color = "red"
         self.text = State.default_text
         self.updateTextField()
                 
@@ -48,10 +66,7 @@ class State(object):
         self.text_drawable.show(visible)
         self.initial_spot_drawable.show(visible)
         self.current_spot_drawable.show(visible)
-
-    def enableDrawables(self, enable):
-        self.initial_spot_drawable.enable(enable)
-        self.current_spot_drawable.enable(enable)
+        self.line_drawable.show(visible)
 
     def setText(self, text):
         self.text = text
@@ -76,14 +91,22 @@ class State(object):
         cameraToNDC = hou.GeometryViewport.ndcToCameraTransform(viewer).inverted()
         NDC = translate * modelToCamera * cameraToNDC
         w = NDC.at(3, 3)
-        w *= .01
+        w *= self.spot_size
         print w
         scale = hou.hmath.buildScale(w, w, w)
         transfrom = scale * translate
-        hou.SimpleDrawable.setTransform(drawable, transfrom)
+        hou.GeometryDrawable.setTransform(drawable, transfrom)
+
+    def setLineTransform(self, drawable):
+        initToCurDir = (self.current_pos - self.initial_pos).normalized()
+        rotate = hou.hmath.buildRotateZToAxis(initToCurDir)
+        translate = hou.hmath.buildTranslate(self.initial_pos)
+        scale = hou.hmath.buildScale(self.measurement, self.measurement, self.measurement)
+        transform = rotate * scale * translate
+        hou.GeometryDrawable.setTransform(drawable, transform)
 
     def updateTextField(self):
-        font_string = '<font color="{2}" size="{1}"> {0} </font>'.format(self.text, self.font_size, self.font_color)
+        font_string = '<font size="{1}" color="{2}"> {0} </font>'.format(self.text, self.font_size, self.font_color)
         self.text_params['text'] = font_string
 
     def getMousePos(self, ui_event):
@@ -102,22 +125,22 @@ class State(object):
         self.scene_viewer.setPromptMessage( State.msg )
         self.current_node = hou.SceneViewer.currentNode(self.scene_viewer)
         self.geometry = hou.SopNode.geometry(self.current_node)
-        self.enableDrawables(True)
+#        self.enableDrawables(True)
 
     def onResume(self, kwargs):
         self.scene_viewer.setPromptMessage( State.msg )
         self.current_node = hou.SceneViewer.currentNode(self.scene_viewer)
         self.geometry = hou.SopNode.geometry(self.current_node)
-        self.enableDrawables(True)
+#        self.enableDrawables(True)
 
     def onExit(self, kwargs):
         hou.SceneViewer.clearPromptMessage(self.scene_viewer)
         self.show(False)
-        self.enableDrawables(False)
+#        self.enableDrawables(False)
 
     def onInterrupt(self,kwargs):
         self.show(False)
-        self.enableDrawables(False)
+#        self.enableDrawables(False)
 
     def onMouseActive(self, ui_event):
         (x, y) = self.getMousePos(ui_event)
@@ -126,6 +149,7 @@ class State(object):
         self.setText(str(self.measurement))
         self.setTextPos(x, y)
         self.setSpotTransform(self.current_spot_drawable, self.current_pos)
+        self.setLineTransform(self.line_drawable)
         self.show(True)
 
     def onMouseStart(self, ui_event):
@@ -151,6 +175,9 @@ class State(object):
         """
         handle = kwargs["draw_handle"]
         hou.TextDrawable.draw(self.text_drawable, handle, self.text_params)
+        hou.GeometryDrawable.draw(self.line_drawable, handle, self.line_params)
+        hou.GeometryDrawable.draw(self.initial_spot_drawable, handle, self.spot_params)
+        hou.GeometryDrawable.draw(self.current_spot_drawable, handle, self.spot_params)
 
 def createViewerStateTemplate():
     """ Mandatory entry point to create and return the viewer state 
