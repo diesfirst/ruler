@@ -16,7 +16,7 @@ import viewerstate.utils as su
 def createSphereGeometry():
     geo = hou.Geometry()
     sphere_verb = hou.sopNodeTypeCategory().nodeVerb("sphere")
-    hou.SopVerb.setParms(sphere_verb, {'type' : 2})
+    hou.SopVerb.setParms(sphere_verb, {'type':2, 'rows':30, 't':(0,0,1)})
     hou.SopVerb.execute(sphere_verb, geo, [])
     return geo
 
@@ -25,6 +25,15 @@ def createLineGeometry():
     line_verb = hou.sopNodeTypeCategory().nodeVerb("line")
     hou.SopVerb.setParms(line_verb, {'dir': (0, 0, 1)})
     hou.SopVerb.execute(line_verb, geo, [])
+    return geo
+
+def createFrustumGeometry():
+    geo = hou.Geometry()
+    tube_verb = hou.sopNodeTypeCategory().nodeVerb("tube")
+    hou.SopVerb.setParms(tube_verb, {
+                'type':1, 'cap':1, 'vertexnormals':1, 't':(0,0,0.25), 
+                'r':(-90, 0, 0), 'rad': (0.5, 1), 'height':0.5, 'cols':10})
+    hou.SopVerb.execute(tube_verb, geo, [])
     return geo
 
 class State(object):
@@ -41,8 +50,9 @@ class State(object):
         self.scene_viewer = scene_viewer
         sphere = createSphereGeometry()
         line = createLineGeometry()
-        self.initial_spot_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Face, "initial_spot", sphere)
-        self.current_spot_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Face, "current_spot", sphere)
+        frustum = createFrustumGeometry()
+        self.initial_spot_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Line, "initial_spot", frustum)
+        self.current_spot_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Line, "current_spot", frustum)
         self.line_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Line, "line", line)
         self.text_drawable = hou.TextDrawable(scene_viewer, "text_drawable")
         self.text_params = {'text': None, 'translate': hou.Vector3(0.0, 0.0, 0.0)}
@@ -50,7 +60,7 @@ class State(object):
         self.line_params = {'line_width': 4.0, 'style': (10.0, 5.0), 'color1': State.yellow,  'fade_factor':0.3}
         self.initial_pos = hou.Vector3(0.0, 0.0, 0.0)
         self.current_pos = hou.Vector3(0.0, 0.0, 0.0)
-        self.spot_size = 0.004
+        self.spot_size = 0.01
         self.measurement = 0.0
         self.geometry = None
         self.current_node = None
@@ -84,7 +94,10 @@ class State(object):
         self.text_params['translate'][0] = x
         self.text_params['translate'][1] = y
 
-    def setSpotTransform(self, drawable, pos):
+    def setSpotTransform(self, drawable, pos, flip):
+        initToCurDir = (self.current_pos - self.initial_pos).normalized()
+        if (flip): initToCurDir *= -1 
+        rotate = hou.hmath.buildRotateZToAxis(initToCurDir)
         translate = hou.hmath.buildTranslate(pos)
         viewer = hou.SceneViewer.curViewport(self.scene_viewer)
         modelToCamera = hou.GeometryViewport.cameraToModelTransform(viewer).inverted()
@@ -92,9 +105,8 @@ class State(object):
         NDC = translate * modelToCamera * cameraToNDC
         w = NDC.at(3, 3)
         w *= self.spot_size
-        print w
         scale = hou.hmath.buildScale(w, w, w)
-        transfrom = scale * translate
+        transfrom = rotate * scale * translate
         hou.GeometryDrawable.setTransform(drawable, transfrom)
 
     def setLineTransform(self, drawable):
@@ -106,7 +118,7 @@ class State(object):
         hou.GeometryDrawable.setTransform(drawable, transform)
 
     def updateTextField(self):
-        font_string = '<font size="{1}" color="{2}"> {0} </font>'.format(self.text, self.font_size, self.font_color)
+        font_string = '<font size="{1}" color="{2}"><b> {0} </b></font>'.format(self.text, self.font_size, self.font_color)
         self.text_params['text'] = font_string
 
     def getMousePos(self, ui_event):
@@ -148,26 +160,22 @@ class State(object):
         self.measurement = (self.current_pos - self.initial_pos).length()
         self.setText(str(self.measurement))
         self.setTextPos(x, y)
-        self.setSpotTransform(self.current_spot_drawable, self.current_pos)
+        self.setSpotTransform(self.initial_spot_drawable, self.initial_pos, True)
+        self.setSpotTransform(self.current_spot_drawable, self.current_pos, False)
         self.setLineTransform(self.line_drawable)
         self.show(True)
 
     def onMouseStart(self, ui_event):
-        (x, y) = self.getMousePos(ui_event)
         self.initial_pos = self.getIntersectionPos(ui_event)
-        self.setText("Start!")
-        self.setTextPos(x, y)
-        self.setSpotTransform(self.initial_spot_drawable, self.initial_pos)
-        self.show(True)
 
     def onMouseEvent(self, kwargs):
         ui_event = kwargs["ui_event"]
         reason = hou.UIEvent.reason(ui_event)
         if (reason == hou.uiEventReason.Start):
             self.onMouseStart(ui_event)
-        if (reason == hou.uiEventReason.Active):
+        elif (reason == hou.uiEventReason.Active):
             self.onMouseActive(ui_event)
-        if (reason == hou.uiEventReason.Changed):
+        else:
             self.show(False)
 
     def onDraw( self, kwargs ):
