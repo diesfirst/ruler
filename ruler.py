@@ -178,17 +178,17 @@ class State(object):
             self.onMouseStart(ui_event)
         elif (reason == hou.uiEventReason.Active):
             self.onMouseActive(ui_event)
-        else:
-            self.show(False)
+#        else:
+#            self.show(False)
 
     def onDraw( self, kwargs ):
         """ This callback is used for rendering the drawables
         """
         handle = kwargs["draw_handle"]
-        hou.TextDrawable.draw(self.text_drawable, handle, self.text_params)
         hou.GeometryDrawable.draw(self.line_drawable, handle, self.line_params)
         hou.GeometryDrawable.draw(self.initial_spot_drawable, handle, self.spot_params)
         hou.GeometryDrawable.draw(self.current_spot_drawable, handle, self.spot_params)
+        hou.TextDrawable.draw(self.text_drawable, handle, self.text_params)
 
 def createViewerStateTemplate():
     """ Mandatory entry point to create and return the viewer state 
