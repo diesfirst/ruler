@@ -6,9 +6,11 @@ Author:         michaelb
 Date Created:   March 24, 2020 - 11:28:31
 """
 
-# Usage: This sample draws highlights when hovering over geometry polygons.
-# Make sure to add an input on the node, connect a polygon mesh geometry and
-# hit enter in the viewer.
+# People are asking for something like this:
+# https://forums.odforce.net/topic/39249-ruler-tool-non-procedurally-measure-a-distance/
+# https://forums.odforce.net/topic/43048-is-there-any-tool-to-measure-distance-between-two-points-in-viewport/
+# https://www.sidefx.com/tutorials/houdini-tutorial-creating-a-measure-distance-tool/
+# Have seen Steven Knipping create a make shift measuring line in a tutorial.
 
 import hou
 import viewerstate.utils as su
@@ -69,6 +71,7 @@ class State(object):
 #        self.font_color = "red"
         self.text = State.default_text
         self.updateTextField()
+        self.show(False)
                 
     def show(self, visible):
         """ Display or hide drawables.
