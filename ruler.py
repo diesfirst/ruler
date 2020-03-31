@@ -27,8 +27,7 @@ def createLineGeometry():
     line_verb = hou.sopNodeTypeCategory().nodeVerb("line")
     hou.SopVerb.setParms(line_verb, {'dir': (0, 0, 1)})
     hou.SopVerb.execute(line_verb, geo, [])
-    return geo
-
+    return geo 
 def createFrustumGeometry():
     geo = hou.Geometry()
     tube_verb = hou.sopNodeTypeCategory().nodeVerb("tube")
@@ -38,6 +37,14 @@ def createFrustumGeometry():
     hou.SopVerb.execute(tube_verb, geo, [])
     return geo
 
+# TODO: Implement a colored background behind the tail and end to 
+#       show that it is being axis aligned. maybe highlight geometry in so-
+#       me similar way around the spot your measuring from
+
+class Measurement(object):
+    def __init__(self):
+
+
 class State(object):
     msg = "Click and drag on the geometry to measure it."
     default_font_size = 30.0
@@ -46,10 +53,12 @@ class State(object):
     yellow = hou.Vector4(0.9450, 0.9804, 0.54902, 1)
     purple = hou.Vector4(0.74118, 0.57647, 0.97647, 1)
     green = hou.Vector4(0.31372, 0.980392, 0.48235, 1)
+    planes = (hou.Vector3(1, 0, 0), hou.Vector3(0, 1, 0), hou.Vector3(0, 0, 1))
 
     def __init__(self, state_name, scene_viewer):
         self.state_name = state_name
         self.scene_viewer = scene_viewer
+        self.geometry_viewport = hou.SceneViewer.curViewport(self.scene_viewer)
         sphere = createSphereGeometry()
         line = createLineGeometry()
         frustum = createFrustumGeometry()
@@ -102,9 +111,8 @@ class State(object):
         if (flip): initToCurDir *= -1 
         rotate = hou.hmath.buildRotateZToAxis(initToCurDir)
         translate = hou.hmath.buildTranslate(pos)
-        viewer = hou.SceneViewer.curViewport(self.scene_viewer)
-        modelToCamera = hou.GeometryViewport.cameraToModelTransform(viewer).inverted()
-        cameraToNDC = hou.GeometryViewport.ndcToCameraTransform(viewer).inverted()
+        modelToCamera = hou.GeometryViewport.cameraToModelTransform(self.geometry_viewport).inverted()
+        cameraToNDC = hou.GeometryViewport.ndcToCameraTransform(self.geometry_viewport).inverted()
         NDC = translate * modelToCamera * cameraToNDC
         w = NDC.at(3, 3)
         w *= self.spot_size
@@ -128,10 +136,24 @@ class State(object):
         device = hou.UIEvent.device(ui_event)
         return device.mouseX(), device.mouseY()
 
+    def findBestPlane(self, ray):
+        ray = (abs(ray[0]), abs(ray[1]), abs(ray[2]))
+        index = ray.index(max(ray))
+        return State.planes[index]
+
+    def intersectWithPlane(self, origin, ray):
+        plane = self.findBestPlane(ray)
+        return hou.hmath.intersectPlane(hou.Vector3(0, 0, 0), plane, origin, ray)
+        
     def getIntersectionPos(self, ui_event):
         (origin, ray) = hou.ViewerEvent.ray(ui_event)
         (prim_num, pos, normal, uvw) = su.sopGeometryIntersection(self.geometry, origin, ray)
+        if (prim_num == -1): 
+            return self.intersectWithPlane(origin, ray)
         return pos
+
+    def worldToScreen(self, pos):
+        return hou.GeometryViewport.mapToScreen(self.geometry_viewport, pos)
 
     def onGenerate(self, kwargs):
         """ Assign the geometry to drawabled
@@ -154,15 +176,16 @@ class State(object):
 #        self.enableDrawables(False)
 
     def onInterrupt(self,kwargs):
-        self.show(False)
+        pass
+#        self.show(False)
 #        self.enableDrawables(False)
 
     def onMouseActive(self, ui_event):
-        (x, y) = self.getMousePos(ui_event)
         self.current_pos = self.getIntersectionPos(ui_event)
         self.measurement = (self.current_pos - self.initial_pos).length()
         self.setText(str(self.measurement))
-        self.setTextPos(x, y)
+        screen_pos = self.worldToScreen(self.current_pos)
+        self.setTextPos(screen_pos[0], screen_pos[1])
         self.setSpotTransform(self.initial_spot_drawable, self.initial_pos, True)
         self.setSpotTransform(self.current_spot_drawable, self.current_pos, False)
         self.setLineTransform(self.line_drawable)
@@ -189,6 +212,16 @@ class State(object):
         hou.GeometryDrawable.draw(self.initial_spot_drawable, handle, self.spot_params)
         hou.GeometryDrawable.draw(self.current_spot_drawable, handle, self.spot_params)
         hou.TextDrawable.draw(self.text_drawable, handle, self.text_params)
+
+    def onDrawInterrupt(self, kwargs):
+        handle = kwargs["draw_handle"]
+        screen_pos = self.worldToScreen(self.current_pos)
+        self.setTextPos(screen_pos[0], screen_pos[1])
+        hou.GeometryDrawable.draw(self.line_drawable, handle, self.line_params)
+        hou.GeometryDrawable.draw(self.initial_spot_drawable, handle, self.spot_params)
+        hou.GeometryDrawable.draw(self.current_spot_drawable, handle, self.spot_params)
+        hou.TextDrawable.draw(self.text_drawable, handle, self.text_params)
+
 
 def createViewerStateTemplate():
     """ Mandatory entry point to create and return the viewer state 
