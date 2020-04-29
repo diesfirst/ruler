@@ -14,6 +14,7 @@ Date Created:   March 24, 2020 - 11:28:31
 
 import hou
 import viewerstate.utils as su
+import math as m
 
 def createSphereGeometry():
     geo = hou.Geometry()
@@ -38,9 +39,125 @@ def createFrustumGeometry():
     hou.SopVerb.execute(tube_verb, geo, [])
     return geo
 
+def createPointGeometry():
+    geo = hou.Geometry()
+    point = hou.Geometry.createPoint(geo)
+    return geo;
+
+def createCircleGeometry():
+    geo = hou.Geometry()
+    circle_verb = hou.sopNodeTypeCategory().nodeVerb("circle")
+    hou.SopVerb.setParms(circle_verb, {
+        'type':1, 'divs':12})
+    hou.SopVerb.execute(circle_verb, geo, [])
+    hou.Geometry.addAttrib(geo, hou.attribType.Point, "Cd", (1, 0, 0))
+    return geo
+
 # TODO: Implement a colored background behind the tail and end to 
 #       show that it is being axis aligned. maybe highlight geometry in so-
 #       me similar way around the spot your measuring from
+
+def makeConcentricDisk(parms):
+    r = parms["radius"]
+    divs = parms["divs"]
+    arcs = parms["arcs"]
+    pi = m.pi
+    arc_len = 2 * pi / arcs
+    div_len = r / float(divs)
+    for i in range(divs):
+        for j in range(arcs):
+            point = hou.Geometry.createPoint(geo)
+            pos = hou.Vector3(m.cos(j * arc_len), m.sin(j * arc_len), 0.0) * i * div_len
+            hou.Point.setPosition(point, pos)
+
+class DiskMaker(object):
+    def __init__(self, radius, divs, arcs, color, gamma):
+        self.parms = {"radius": radius, "divs":divs, "arcs":arcs, "geo":None, "color": color, "gamma":gamma}
+
+    def createAttribs(self, geo):
+        hou.Geometry.addAttrib(geo, hou.attribType.Point, "Cd", (1.0, 1.0, 1.0))
+        hou.Geometry.addAttrib(geo, hou.attribType.Point, "Alpha", 1.0)
+        
+    def makePoints(self, geo, r, divs, arcs, color, gamma):
+        self.createAttribs(geo)
+        pi = m.pi
+        arc_len = 2 * pi / arcs
+        div_len = r / float(divs)
+        
+        point0 = hou.Geometry.createPoint(geo)
+        hou.Point.setAttribValue(point0, "Cd", color)
+        hou.Point.setAttribValue(point0, "Alpha", 1.0)
+        for i in range(1, divs):
+            alpha = pow(1 - (float(i) / divs), gamma)
+            for j in range(arcs):
+                point = hou.Geometry.createPoint(geo)
+                pos = hou.Vector3(m.cos(j * arc_len), m.sin(j * arc_len), 0.0) * i * div_len
+                hou.Point.setPosition(point, pos)
+                hou.Point.setAttribValue(point, "Cd", color)
+                hou.Point.setAttribValue(point, "Alpha", alpha)
+                
+    def makeFirstRing(self, geo, arcs):
+        points = hou.Geometry.points(geo)
+        p0 = points[0]
+        for i in range(1, arcs):
+            prim = hou.Geometry.createPolygon(geo)
+            hou.Polygon.addVertex(prim, points[0])
+            hou.Polygon.addVertex(prim, points[i])
+            hou.Polygon.addVertex(prim, points[i+1])
+        prim = hou.Geometry.createPolygon(geo)
+        hou.Polygon.addVertex(prim, points[0])
+        hou.Polygon.addVertex(prim, points[arcs])
+        hou.Polygon.addVertex(prim, points[1])
+        
+    def makeOtherRings(self, geo, arcs, divs):
+        points = hou.Geometry.points(geo)
+        for i in range(1, divs - 1):
+            for j in range(1, arcs):
+                p0 = points[ j + arcs * (i - 1) ]
+                p3 = points[ j + 1 + arcs * (i - 1) ]
+                p1 = points[ j + arcs * i ]
+                p2 = points[ j + 1 + arcs * i ]
+                prim = hou.Geometry.createPolygon(geo)
+                hou.Polygon.addVertex(prim, p0)
+                hou.Polygon.addVertex(prim, p1)
+                hou.Polygon.addVertex(prim, p2)
+                hou.Polygon.addVertex(prim, p3)
+            p0 = points[ arcs + arcs * (i - 1) ]
+            p3 = points[ 1 + arcs * (i - 1) ]
+            p1 = points[ arcs + arcs * i ]
+            p2 = points[ 1 + arcs * i ]
+            prim = hou.Geometry.createPolygon(geo)
+            hou.Polygon.addVertex(prim, p0)
+            hou.Polygon.addVertex(prim, p1)
+            hou.Polygon.addVertex(prim, p2)
+            hou.Polygon.addVertex(prim, p3)
+                
+    def makePrims(self, geo, arcs, divs):
+        self.makeFirstRing(geo, arcs)
+        self.makeOtherRings(geo, arcs, divs)
+
+    def makeDiskImp(self, parms):
+        color = parms["color"]
+        geo = parms["geo"]
+        r = parms["radius"]
+        divs = parms["divs"]
+        arcs = parms["arcs"]
+        gamma = parms["gamma"]
+        self.makePoints(geo, r, divs, arcs, color, gamma)
+        self.makePrims(geo, arcs, divs)
+
+    def setColor(self, color):
+        self.parms["color"] = color
+        print color
+
+    def makeDisk(self, direction, color):
+        self.setColor(color)
+        geo = hou.Geometry()
+        self.parms["geo"] = geo
+        self.makeDiskImp(self.parms)
+        rotate = hou.hmath.buildRotateZToAxis(hou.Vector3(direction))
+        hou.Geometry.transform(geo, rotate)
+        return geo
 
 class Color(object):
     green = 0
@@ -64,21 +181,36 @@ class Color(object):
     def getHexStr(self):
         return self.hex_str
 
+
+class Plane:
+    X, Y, Z = range(0, 3)
+
 class Measurement(object):
     default_font_size = 30.0
     default_text = "default text"
+    disk_maker = DiskMaker(10, 8, 20, (1.0, 1.0, 1.0), 3)
 
     def __init__(self, scene_viewer, color):
         sphere = createSphereGeometry()
         line = createLineGeometry()
         frustum = createFrustumGeometry()
+        point = createPointGeometry()
+        circle = createCircleGeometry()
+        self.disk_x = Measurement.disk_maker.makeDisk((1, 0, 0), (.7, .2, .2))
+        self.disk_y = Measurement.disk_maker.makeDisk((0, 1, 0), (.2, .7, .2))
+        self.disk_z = Measurement.disk_maker.makeDisk((0, 0, 1), (.2, .2, .7))
+        self.scene_viewer = scene_viewer
         self.tail_spot_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Line, "tail_spot", frustum)
         self.head_spot_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Line, "head_spot", frustum)
         self.line_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Line, "line", line)
+        self.point_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Point, "point", point)
+        self.tail_disk_drawable = None
+        self.head_disk_drawable = None
         self.text_drawable = hou.TextDrawable(scene_viewer, "text_drawable")
         self.text_params = {'text': None, 'translate': hou.Vector3(0.0, 0.0, 0.0)}
         self.spot_params = {'color1': color.getVec(), 'fade_factor': 0.5}
         self.line_params = {'line_width': 4.0, 'style': (10.0, 5.0), 'color1': color.getVec(),  'fade_factor':0.3}
+        self.point_params = {'style': hou.drawableGeometryPointStyle.LinearCircle, 'radius': 25.5}
         self.tail_pos = hou.Vector3(0.0, 0.0, 0.0)
         self.head_pos = hou.Vector3(0.0, 0.0, 0.0)
         self.spot_size = 0.01
@@ -86,7 +218,12 @@ class Measurement(object):
         self.font_size = Measurement.default_font_size
         self.font_color = color.getHexStr()
         self.text = Measurement.default_text
+        self.curPlane = None
+        self.angle_snapping = False
         self.updateTextField()
+
+    def getMeasurement(self):
+        return self.measurement
 
     def show(self, visible):
         """ Display or hide drawables.
@@ -95,6 +232,11 @@ class Measurement(object):
         self.tail_spot_drawable.show(visible)
         self.head_spot_drawable.show(visible)
         self.line_drawable.show(visible)
+        self.point_drawable.show(visible)
+        if self.tail_disk_drawable != None:
+            self.tail_disk_drawable.show(visible)
+        if self.head_disk_drawable != None:
+            self.head_disk_drawable.show(visible)
 
     def setText(self, text):
         self.text = text
@@ -119,6 +261,10 @@ class Measurement(object):
     def draw( self, handle ):
         """ This callback is used for rendering the drawables
         """
+        if self.tail_disk_drawable != None:
+            hou.GeometryDrawable.draw(self.tail_disk_drawable, handle)
+        if self.head_disk_drawable != None:
+            hou.GeometryDrawable.draw(self.head_disk_drawable, handle)
         hou.GeometryDrawable.draw(self.line_drawable, handle, self.line_params)
         hou.GeometryDrawable.draw(self.tail_spot_drawable, handle, self.spot_params)
         hou.GeometryDrawable.draw(self.head_spot_drawable, handle, self.spot_params)
@@ -127,10 +273,34 @@ class Measurement(object):
     def drawInterrupt(self, handle, geometry_viewport):
         screen_pos = hou.GeometryViewport.mapToScreen(geometry_viewport, self.head_pos)
         self.setTextPos(screen_pos[0], screen_pos[1])
+        if self.tail_disk_drawable != None:
+            hou.GeometryDrawable.draw(self.tail_disk_drawable, handle)
+        if self.head_disk_drawable != None:
+            hou.GeometryDrawable.draw(self.head_disk_drawable, handle)
         hou.GeometryDrawable.draw(self.line_drawable, handle, self.line_params)
         hou.GeometryDrawable.draw(self.tail_spot_drawable, handle, self.spot_params)
         hou.GeometryDrawable.draw(self.head_spot_drawable, handle, self.spot_params)
         hou.TextDrawable.draw(self.text_drawable, handle, self.text_params)
+
+    def getCameraCancellingScale(self, translate, model_to_camera, camera_to_ndc):
+        model_to_ndc = translate * model_to_camera * camera_to_ndc
+        w = model_to_ndc.at(3, 3)
+        if (w == 1): # this checks for orthogonality of the matrix. does not feel very robust tho...
+            w = 2 / abs(camera_to_ndc.at(0,0)) #scale ~* orthowidth
+        w *= self.spot_size
+        scale = hou.hmath.buildScale(w, w, w)
+        return scale
+
+    def setPlane(self, plane):
+        self.curPlane = plane
+
+    def angleSnapping(self, yes):
+        if (yes):
+            self.angle_snapping = True
+            print "Angle snapping on"
+        else:
+            self.angle_snapping = False
+            print "Angle snapping off"
 
     def setSpotTransform(self, drawable, model_to_camera, camera_to_ndc):
         initToCurDir = (self.head_pos - self.tail_pos).normalized()
@@ -140,14 +310,19 @@ class Measurement(object):
         else:
             translate = hou.hmath.buildTranslate(self.head_pos)
         rotate = hou.hmath.buildRotateZToAxis(initToCurDir)
-        model_to_ndc = translate * model_to_camera * camera_to_ndc
-        w = model_to_ndc.at(3, 3)
-        if (w == 1): # this checks for orthogonality of the matrix. does not feel very robust tho...
-            w = 2 / abs(camera_to_ndc.at(0,0)) #scale ~* orthowidth
-        w *= self.spot_size
-        scale = hou.hmath.buildScale(w, w, w)
-        transfrom = rotate * scale * translate
-        hou.GeometryDrawable.setTransform(drawable, transfrom)
+        scale = self.getCameraCancellingScale(translate, model_to_camera, camera_to_ndc)
+        transform = rotate * scale * translate
+        hou.GeometryDrawable.setTransform(drawable, transform)
+
+    def setPointTransform(self, pos):
+        translate = hou.hmath.buildTranslate(pos)
+        hou.GeometryDrawable.setTransform(self.point_drawable, translate)
+
+    def setDiskTransform(self, disk, pos, model_to_camera, camera_to_ndc):
+        translate = hou.hmath.buildTranslate(pos)
+        scale = self.getCameraCancellingScale(translate, model_to_camera, camera_to_ndc)
+        transform = scale * translate
+        hou.GeometryDrawable.setTransform(disk, transform)
 
     def setLineTransform(self, drawable):
         initToCurDir = (self.head_pos - self.tail_pos).normalized()
@@ -160,6 +335,22 @@ class Measurement(object):
     def setTailPos(self, pos):
         self.tail_pos = pos
 
+    def setTailDisk(self, plane, scene_viewer,  model_to_camera, camera_to_ndc):
+        if plane == Plane.X: self.tail_disk_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Line, "circle", self.disk_x)
+        if plane == Plane.Y: self.tail_disk_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Line, "circle", self.disk_y)
+        if plane == Plane.Z: self.tail_disk_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Line, "circle", self.disk_z)
+        self.setDiskTransform(self.tail_disk_drawable, self.tail_pos, model_to_camera, camera_to_ndc)
+
+    def setHeadDisk(self, plane, scene_viewer):
+        if plane == Plane.X: 
+            self.head_disk_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Line, "circle", self.disk_x)
+        elif plane == Plane.Y: 
+            self.head_disk_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Line, "circle", self.disk_y)
+        elif plane == Plane.Z: 
+            self.head_disk_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Line, "circle", self.disk_z)
+        else:
+            print "Should not be called"
+
     def updateHeadPos(self, pos):
         self.head_pos = pos 
         self.measurement = (pos - self.tail_pos).length()
@@ -168,23 +359,35 @@ class Measurement(object):
         self.setTextPos(screen_pos[0], screen_pos[1])
         self.setText(str(self.measurement))
 
-    def updateDrawables(self, model_to_camera, camera_to_ndc):
+    def updateDrawables(self, model_to_camera, camera_to_ndc, plane, scene_viewer):
         self.setSpotTransform(self.tail_spot_drawable, model_to_camera, camera_to_ndc)
         self.setSpotTransform(self.head_spot_drawable, model_to_camera, camera_to_ndc)
         self.setLineTransform(self.line_drawable)
+        self.setPointTransform(self.tail_pos)
+        if (plane == None):
+            self.head_disk_drawable = None
+            return
+#        if plane != self.curPlane:
+#            self.curPlane = plane
+        self.setHeadDisk(plane, scene_viewer)
+        self.setDiskTransform(self.head_disk_drawable, self.head_pos, model_to_camera, camera_to_ndc)
 
-    def update(self, intersection_pos, screen_pos, model_to_camera, camera_to_ndc):
-        self.updateHeadPos(intersection_pos)
+    def update(self, intersection, screen_pos, model_to_camera, camera_to_ndc, scene_viewer):
+        self.updateHeadPos(intersection.pos)
         self.updateText(screen_pos)
-        self.updateDrawables(model_to_camera, camera_to_ndc)
+        if (intersection.plane != None):
+            self.updateDrawables(model_to_camera, camera_to_ndc, self.curPlane, scene_viewer)
+        else:
+            self.updateDrawables(model_to_camera, camera_to_ndc, None, scene_viewer)
 
 class MeasurementContainer(object):
     colors = (
             Color(Color.green), Color(Color.yellow),
             Color(Color.pink), Color(Color.purple))
 
-    def __init__(self):
+    def __init__(self, viewport):
         self.measurements = []
+        self.viewport = viewport
 
     def showAll(self):
         for m in self.measurements: 
@@ -202,6 +405,13 @@ class MeasurementContainer(object):
         self.measurements.append(Measurement(scene_viewer, MeasurementContainer.colors[colorIndex]))
         self.measurements[-1].show(False)
 
+    def removeMeasurement(self):
+        if self.count() < 1: return
+        colorIndex = (self.count() - 1) % len(MeasurementContainer.colors)
+        self.current().show(False)
+        self.measurements.pop()
+        hou.GeometryViewport.draw(self.viewport)
+
     def draw(self, handle):
         for m in self.measurements:
             m.draw(handle)
@@ -215,11 +425,16 @@ class MeasurementContainer(object):
             raise hou.Error("No measurements available!") #this check is for debugging. we should never be in this place if things work correctly.
         return self.measurements[-1]
 
-    def setCurrentTailPos(self, pos):
-        self.current().setTailPos(pos)
+class Intersection():
+    def __init__(self, pos, plane):
+        self.pos = pos
+        self.has_plane = (plane != None)
+        self.plane = plane
 
-    def updateCurrent(self, intersection_pos, screen_pos, model_to_camera, camera_to_ndc):
-        self.current().update(intersection_pos, screen_pos, model_to_camera, camera_to_ndc)
+class Key():
+    copy_to_clip = 113 # q
+    undo = 122 # z
+    create_line_sops = 97 # a
 
 class State(object):
     msg = "Click and drag on the geometry to measure it."
@@ -231,9 +446,11 @@ class State(object):
         self.geometry_viewport = hou.SceneViewer.curViewport(self.scene_viewer)
         self.geo_intersector = None
         self.geometry = None
-        self.measurements = MeasurementContainer()
+        self.measurements = MeasurementContainer(self.geometry_viewport)
         self.current_node = None
+        self.curPlane = None
         self.show(False)
+        self.angle_snapping = False
                 
     def show(self, visible):
         """ Display or hide drawables.
@@ -250,21 +467,53 @@ class State(object):
     def findBestPlane(self, ray):
         ray = (abs(ray[0]), abs(ray[1]), abs(ray[2]))
         index = ray.index(max(ray))
-        return State.planes[index]
+        return index
 
     def intersectWithPlane(self, origin, ray):
-        plane = self.findBestPlane(ray)
-        return hou.hmath.intersectPlane(hou.Vector3(0, 0, 0), plane, origin, ray)
-        
-    def getIntersectionPos(self, ui_event):
-        (origin, ray) = hou.ViewerEvent.ray(ui_event)
+        return Intersection(hou.hmath.intersectPlane(hou.Vector3(0, 0, 0), State.planes[self.curPlane], origin, ray), self.curPlane)
+
+    def getIntersectionRegular(self, ui_event):
+        snapping_dict = hou.ViewerEvent.snappingRay(ui_event)
+        origin = snapping_dict["origin_point"]
+        ray = snapping_dict["direction"]
         if self.geo_intersector.intersect(origin, ray):
             if self.geo_intersector.snapped:
-                return self.geo_intersector.snapped_position
+                return Intersection(self.geo_intersector.snapped_position, None)
             else:
-                return self.geo_intersector.position
+                return Intersection(self.geo_intersector.position, None)
         else:
             return self.intersectWithPlane(origin, ray)
+
+    def getIntersectionAngleSnap(self, ui_event):
+        return Intersection(hou.Vector3(0,0,0), None)
+
+    def getIntersection(self, ui_event):
+        if self.angle_snapping:
+            return self.getIntersectionAngleSnap(ui_event)
+        else:
+            return self.getIntersectionRegular(ui_event)
+
+    def setMeasurementPlane(self, ui_event):
+        snapping_dict = hou.ViewerEvent.snappingRay(ui_event)
+        snap_mode = self.scene_viewer.snappingMode()
+        cur_viewport = hou.SceneViewer.curViewport(self.scene_viewer)
+        vt = hou.GeometryViewport.type(cur_viewport)
+        if snap_mode == hou.snappingMode.Grid:
+            if vt == hou.geometryViewportType.Perspective or vt == hou.geometryViewportType.Top or vt == hou.geometryViewportType.Bottom:
+                plane = Plane.Y
+            if vt == hou.geometryViewportType.Front or vt == hou.geometryViewportType.Back:
+                plane = Plane.Z
+            if vt == hou.geometryViewportType.Left or vt == hou.geometryViewportType.Right:
+                plane = Plane.X
+        else:
+            ray = snapping_dict["direction"]
+            plane = self.findBestPlane(ray)
+        self.measurements.current().setPlane(plane)
+        self.curPlane = plane
+
+    def angleSnapping(self, yes):
+        self.measurements.current().angleSnapping(yes)
+        self.angle_snapping = yes
 
     def worldToScreen(self, pos):
         return hou.GeometryViewport.mapToScreen(self.geometry_viewport, pos)
@@ -281,6 +530,9 @@ class State(object):
     def getCameraToNDC(self):
         camera_to_ndc = hou.GeometryViewport.ndcToCameraTransform(self.geometry_viewport).inverted()
         return camera_to_ndc
+
+    def removeMeasurement(self):
+        self.measurements.removeMeasurement()
 
     def onGenerate(self, kwargs):
         """ Assign the geometry to drawabled
@@ -305,28 +557,54 @@ class State(object):
         pass
 
     def onMouseActive(self, ui_event):
-        print "Intersector snap mode"
-        print self.geo_intersector.snap_mode
-        world_pos = self.getIntersectionPos(ui_event)
-        screen_pos = self.worldToScreen(world_pos)
-        self.measurements.updateCurrent(world_pos, screen_pos, self.getModelToCamera(), self.getCameraToNDC())
+        intersection = self.getIntersection(ui_event)
+        screen_pos = self.worldToScreen(intersection.pos)
+        self.measurements.current().update(intersection, screen_pos, self.getModelToCamera(), self.getCameraToNDC(), self.scene_viewer)
         self.show(True)
 
     def onMouseStart(self, ui_event):
         self.measurements.addMeasurement(self.scene_viewer)
-        intersection_pos = self.getIntersectionPos(ui_event)
-        self.measurements.setCurrentTailPos(intersection_pos)
+        self.setMeasurementPlane(ui_event)
+        intersection = self.getIntersection(ui_event)
+        self.measurements.current().setTailPos(intersection.pos)
+        if intersection.plane != None:
+            self.measurements.current().setTailDisk(intersection.plane, self.scene_viewer, self.getModelToCamera(), self.getCameraToNDC())
 
     def onMouseEvent(self, kwargs):
         ui_event = kwargs["ui_event"]
         reason = hou.UIEvent.reason(ui_event)
         if (reason == hou.uiEventReason.Start):
+            hou.SceneViewer.beginStateUndo(self.scene_viewer, "foo")
             self.onMouseStart(ui_event)
         elif (reason == hou.uiEventReason.Active):
             self.onMouseActive(ui_event)
-#        else:
-#            self.show(False)
+        elif (reason == hou.uiEventReason.Changed):
+            self.curPlane = None
+            hou.SceneViewer.endStateUndo(self.scene_viewer)
 
+    def onKeyEvent(self, kwargs):
+        ui_event = kwargs["ui_event"]
+        device = ui_event.device()
+        if device.isKeyPressed():
+            if device.keyValue() == Key.undo:
+                self.measurements.removeMeasurement()
+                return True
+            if device.keyValue() == Key.copy_to_clip:
+                m = self.measurements.current().getMeasurement()
+                hou.ui.copyTextToClipboard(str(m))
+                return True
+            if device.keyValue() == Key.create_line_sops:
+                createLineSops()
+        return False 
+
+    def onKeyTransitEvent(self, kwargs):
+        ui_event = kwargs['ui_event']
+        dev = ui_event.device()
+        if dev.isKeyDown() and dev.isCtrlKey(): 
+            self.angleSnapping(True)
+        if dev.isKeyUp() and self.angle_snapping: 
+            self.angleSnapping(False)
+            
     def onDraw( self, kwargs ):
         """ This callback is used for rendering the drawables
         """
