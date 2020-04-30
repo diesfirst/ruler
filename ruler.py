@@ -222,8 +222,14 @@ class Measurement(object):
         self.angle_snapping = False
         self.updateTextField()
 
-    def getMeasurement(self):
+    def getLength(self):
         return self.measurement
+
+    def getTailPos(self):
+        return self.tail_pos
+
+    def getDir(self):
+        return hou.Vector3.normalized(self.head_pos - self.tail_pos)
 
     def show(self, visible):
         """ Display or hide drawables.
@@ -425,6 +431,9 @@ class MeasurementContainer(object):
             raise hou.Error("No measurements available!") #this check is for debugging. we should never be in this place if things work correctly.
         return self.measurements[-1]
 
+    def __getitem__(self, index):
+        return self.measurements[index]
+
 class Intersection():
     def __init__(self, pos, plane):
         self.pos = pos
@@ -459,6 +468,21 @@ class State(object):
             self.measurements.showAll()
         else:
             self.measurements.hideAll()
+
+    def createSop(self, measurement):
+        network = hou.SceneViewer.pwd(self.scene_viewer)
+        line_node = hou.Node.createNode(network, "line")
+        length_parm = hou.SopNode.parm(line_node, "dist")
+        origin_parm = hou.SopNode.parmTuple(line_node, "origin")
+        dir_parm = hou.SopNode.parmTuple(line_node, "dir")
+        hou.Parm.set(length_parm, measurement.getLength())
+        hou.ParmTuple.set(origin_parm, measurement.getTailPos())
+        hou.ParmTuple.set(dir_parm, measurement.getDir())
+        hou.Node.moveToGoodPosition(line_node)
+
+    def createSops(self):
+        for measurement in self.measurements:
+            self.createSop(measurement)
 
     def getMousePos(self, ui_event):
         device = hou.UIEvent.device(ui_event)
@@ -590,11 +614,11 @@ class State(object):
                 self.measurements.removeMeasurement()
                 return True
             if device.keyValue() == Key.copy_to_clip:
-                m = self.measurements.current().getMeasurement()
+                m = self.measurements.current().getLength()
                 hou.ui.copyTextToClipboard(str(m))
                 return True
             if device.keyValue() == Key.create_line_sops:
-                createLineSops()
+                self.createSops()
         return False 
 
     def onKeyTransitEvent(self, kwargs):
