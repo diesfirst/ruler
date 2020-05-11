@@ -16,6 +16,35 @@ import hou
 import viewerstate.utils as su
 import math as m
 
+pysop_string = """
+tail = hou.Vector3({})
+head = hou.Vector3({})
+color = hou.Vector3({})
+
+length = hou.Vector3.length(head - tail)
+
+node = hou.pwd()
+geo = node.geometry()
+
+line = hou.Geometry.createPolygon(geo)
+
+p1 = hou.Geometry.createPoint(geo)
+p2 = hou.Geometry.createPoint(geo)
+
+hou.Point.setPosition(p1, tail)
+hou.Point.setPosition(p2, head)
+
+hou.Face.addVertex(line, p1)
+hou.Face.addVertex(line, p2)
+
+hou.Geometry.addAttrib(geo, hou.attribType.Prim, "length", 0.0)
+hou.Geometry.addAttrib(geo, hou.attribType.Prim, "Cd", hou.Vector3())
+
+hou.Prim.setAttribValue(line, "length", length)
+hou.Prim.setAttribValue(line, "Cd", color)
+"""
+
+
 def createSphereGeometry():
     geo = hou.Geometry()
     sphere_verb = hou.sopNodeTypeCategory().nodeVerb("sphere")
@@ -178,6 +207,9 @@ class Color(object):
     def getVec(self):
         return self.vector4
 
+    def getVec3(self):
+        return hou.Vector3(self.vector4[0], self.vector4[1], self.vector4[2])
+
     def getHexStr(self):
         return self.hex_str
 
@@ -194,8 +226,8 @@ class Measurement(object):
         sphere = createSphereGeometry()
         line = createLineGeometry()
         frustum = createFrustumGeometry()
-        point = createPointGeometry()
         circle = createCircleGeometry()
+        self.color = color
         self.disk_x = Measurement.disk_maker.makeDisk((1, 0, 0), (.7, .2, .2))
         self.disk_y = Measurement.disk_maker.makeDisk((0, 1, 0), (.2, .7, .2))
         self.disk_z = Measurement.disk_maker.makeDisk((0, 0, 1), (.2, .2, .7))
@@ -203,14 +235,12 @@ class Measurement(object):
         self.tail_spot_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Line, "tail_spot", frustum)
         self.head_spot_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Line, "head_spot", frustum)
         self.line_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Line, "line", line)
-        self.point_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Point, "point", point)
         self.tail_disk_drawable = None
         self.head_disk_drawable = None
         self.text_drawable = hou.TextDrawable(scene_viewer, "text_drawable")
         self.text_params = {'text': None, 'translate': hou.Vector3(0.0, 0.0, 0.0)}
         self.spot_params = {'color1': color.getVec(), 'fade_factor': 0.5}
         self.line_params = {'line_width': 4.0, 'style': (10.0, 5.0), 'color1': color.getVec(),  'fade_factor':0.3}
-        self.point_params = {'style': hou.drawableGeometryPointStyle.LinearCircle, 'radius': 25.5}
         self.tail_pos = hou.Vector3(0.0, 0.0, 0.0)
         self.head_pos = hou.Vector3(0.0, 0.0, 0.0)
         self.spot_size = 0.01
@@ -228,6 +258,12 @@ class Measurement(object):
     def getTailPos(self):
         return self.tail_pos
 
+    def getHeadPos(self):
+        return self.head_pos
+
+    def getColor(self):
+        return self.color.getVec3()
+
     def getDir(self):
         return hou.Vector3.normalized(self.head_pos - self.tail_pos)
 
@@ -238,14 +274,13 @@ class Measurement(object):
         self.tail_spot_drawable.show(visible)
         self.head_spot_drawable.show(visible)
         self.line_drawable.show(visible)
-        self.point_drawable.show(visible)
         if self.tail_disk_drawable != None:
             self.tail_disk_drawable.show(visible)
         if self.head_disk_drawable != None:
             self.head_disk_drawable.show(visible)
 
-    def setText(self, text):
-        self.text = text
+    def setText(self, measurement):
+        self.text = str(round(measurement, 5))
         self.updateTextField()
 
     def setFontSize(self, size):
@@ -320,10 +355,6 @@ class Measurement(object):
         transform = rotate * scale * translate
         hou.GeometryDrawable.setTransform(drawable, transform)
 
-    def setPointTransform(self, pos):
-        translate = hou.hmath.buildTranslate(pos)
-        hou.GeometryDrawable.setTransform(self.point_drawable, translate)
-
     def setDiskTransform(self, disk, pos, model_to_camera, camera_to_ndc):
         translate = hou.hmath.buildTranslate(pos)
         scale = self.getCameraCancellingScale(translate, model_to_camera, camera_to_ndc)
@@ -363,13 +394,13 @@ class Measurement(object):
 
     def updateText(self, screen_pos):
         self.setTextPos(screen_pos[0], screen_pos[1])
-        self.setText(str(self.measurement))
+        self.setText(self.measurement)
 
     def updateDrawables(self, model_to_camera, camera_to_ndc, plane, scene_viewer):
         self.setSpotTransform(self.tail_spot_drawable, model_to_camera, camera_to_ndc)
         self.setSpotTransform(self.head_spot_drawable, model_to_camera, camera_to_ndc)
         self.setLineTransform(self.line_drawable)
-        self.setPointTransform(self.tail_pos)
+#        self.setPointTransform(self.tail_pos)
         if (plane == None):
             self.head_disk_drawable = None
             return
@@ -446,7 +477,13 @@ class Key():
     create_line_sops = 97 # a
 
 class State(object):
-    msg = "Click and drag on the geometry to measure it."
+    msg = """
+    Click and drag on the geometry to measure it.
+    Press the '{}' key to copy the last measurement to clip board.
+    Press the '{}' key to undo the most recent measurement.
+    Press the '{}' key to drop a sop containing lines representing all measurements.
+    """.format(chr(Key.copy_to_clip), chr(Key.undo), chr(Key.create_line_sops))
+    
     planes = (hou.Vector3(1, 0, 0), hou.Vector3(0, 1, 0), hou.Vector3(0, 0, 1))
 
     def __init__(self, state_name, scene_viewer):
@@ -460,6 +497,11 @@ class State(object):
         self.curPlane = None
         self.show(False)
         self.angle_snapping = False
+        point = createPointGeometry()
+        self.point_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Point, "point", point)
+        self.point_params = {'style': hou.drawableGeometryPointStyle.SmoothCircle, 'radius': 2, 'color2': hou.Vector4(0, 1, 1, 1),
+                'color1' : hou.Vector4(.9, .8, .1, 1.), 'highlight_mode':hou.drawableHighlightMode.MatteOverGlow, 'glow_width': 20}
+        self.active = False
                 
     def show(self, visible):
         """ Display or hide drawables.
@@ -469,7 +511,12 @@ class State(object):
         else:
             self.measurements.hideAll()
 
-    def createSop(self, measurement):
+    def setActive(self, val):
+        self.active = val
+        hou.GeometryDrawable.show(self.point_drawable, not val)
+
+#not used currently
+    def createLineSop(self, measurement):
         network = hou.SceneViewer.pwd(self.scene_viewer)
         line_node = hou.Node.createNode(network, "line")
         length_parm = hou.SopNode.parm(line_node, "dist")
@@ -480,9 +527,41 @@ class State(object):
         hou.ParmTuple.set(dir_parm, measurement.getDir())
         hou.Node.moveToGoodPosition(line_node)
 
+    def generatePythonSopCode(self, measurement):
+        tail_pos = measurement.getTailPos()
+        head_pos = measurement.getHeadPos()
+        color = measurement.getColor()
+        string = pysop_string.format(tail_pos, head_pos, color)
+        return string
+
+    def createSop(self, measurement, network, merge, count):
+        python_sop = hou.Node.createNode(network, "python", "measurement" + str(count))
+        code_parm = hou.Node.parm(python_sop, "python")
+        code = self.generatePythonSopCode(measurement)
+        hou.Parm.set(code_parm, code)
+        hou.Node.moveToGoodPosition(python_sop)
+        hou.Node.setInput(merge, count, python_sop)
+        return python_sop
+
     def createSops(self):
+        network = hou.SceneViewer.pwd(self.scene_viewer)
+        subnet = hou.Node.createNode(network, "subnet", "measurements1")
+        merge = hou.Node.createNode(subnet, "merge")
+        output = hou.Node.createNode(subnet, "output")
+        hou.Node.setInput(output, 0, merge)
+        sops = []
+        count = 0
         for measurement in self.measurements:
-            self.createSop(measurement)
+            sops.append(self.createSop(measurement, subnet, merge, count))
+            count += 1
+        hou.Node.moveToGoodPosition(merge)
+        hou.Node.moveToGoodPosition(output)
+        hou.Node.moveToGoodPosition(subnet)
+
+        parms = hou.Node.parms(subnet)
+        for p in parms:
+            hou.Parm.hide(p, True)
+
 
     def getMousePos(self, ui_event):
         device = hou.UIEvent.device(ui_event)
@@ -509,7 +588,32 @@ class State(object):
             return self.intersectWithPlane(origin, ray)
 
     def getIntersectionAngleSnap(self, ui_event):
-        return Intersection(hou.Vector3(0,0,0), None)
+        origin, ray = hou.ViewerEvent.ray(ui_event)
+        init_pos = self.getIntersectionRegular(ui_event).pos
+        measurement_vec = init_pos - self.measurements.current().getTailPos()
+        measurement_vec[self.curPlane] = 0; #project onto plane
+        plane_normal = State.planes[self.curPlane]
+        plane_vec = State.planes[(self.curPlane + 1) % 3] #the vector that lies in the plane we will be finding the angle too
+        # just going to use the normal vector of the "next" plane for now
+        angle = hou.Vector3.angleTo(measurement_vec, plane_vec)
+        assert angle >= 0
+        below_15 = (int(angle) / 15) * 15
+        above_15 = below_15 + 15
+        closest_angle = below_15 if angle - below_15 < 7.5 else above_15
+        rot = hou.hmath.buildRotateAboutAxis(plane_normal, closest_angle)
+        vec = plane_vec * rot
+        vec *= measurement_vec.length()
+        if measurement_vec[(self.curPlane + 2) % 3] < 0:
+            vec[(self.curPlane + 2) % 3] *= -1 #need this correction to span the full circle of angles
+        vec += self.measurements.current().getTailPos()
+        vec[self.curPlane] = origin[self.curPlane]
+        direction = plane_normal if hou.Vector3.dot(plane_normal, origin) < 0 else plane_normal * -1
+        print vec 
+        print direction
+        if self.geo_intersector.intersect(vec, direction):
+            return Intersection(self.geo_intersector.position, None)
+        else:
+            return self.intersectWithPlane(vec, direction)
 
     def getIntersection(self, ui_event):
         if self.angle_snapping:
@@ -532,8 +636,13 @@ class State(object):
         else:
             ray = snapping_dict["direction"]
             plane = self.findBestPlane(ray)
-        self.measurements.current().setPlane(plane)
+        if (self.active):
+            self.measurements.current().setPlane(plane)
         self.curPlane = plane
+
+    def setPointTransform(self, pos):
+        translate = hou.hmath.buildTranslate(pos)
+        hou.GeometryDrawable.setTransform(self.point_drawable, translate)
 
     def angleSnapping(self, yes):
         self.measurements.current().angleSnapping(yes)
@@ -563,15 +672,17 @@ class State(object):
         """
         self.measurement = 0.0;
         self.scene_viewer.setPromptMessage( State.msg )
-        self.current_node = hou.SceneViewer.currentNode(self.scene_viewer)
+        self.current_node = hou.SceneViewer.pwd(self.scene_viewer).displayNode()
         self.geometry = hou.SopNode.geometry(self.current_node)
         self.geo_intersector = su.GeometryIntersector(self.geometry, self.scene_viewer)
+        self.setActive(False)
 
     def onResume(self, kwargs):
         self.scene_viewer.setPromptMessage( State.msg )
-        self.current_node = hou.SceneViewer.currentNode(self.scene_viewer)
+        self.current_node = hou.SceneViewer.pwd(self.scene_viewer).displayNode()
         self.geometry = hou.SopNode.geometry(self.current_node)
         self.geo_intersector = su.GeometryIntersector(self.geometry, self.scene_viewer)
+        self.show(True)
 
     def onExit(self, kwargs):
         hou.SceneViewer.clearPromptMessage(self.scene_viewer)
@@ -579,6 +690,11 @@ class State(object):
 
     def onInterrupt(self,kwargs):
         pass
+
+    def updateInactive(self, ui_event):
+        self.setMeasurementPlane(ui_event)
+        intersection = self.getIntersection(ui_event)
+        self.setPointTransform(intersection.pos)
 
     def onMouseActive(self, ui_event):
         intersection = self.getIntersection(ui_event)
@@ -598,13 +714,17 @@ class State(object):
         ui_event = kwargs["ui_event"]
         reason = hou.UIEvent.reason(ui_event)
         if (reason == hou.uiEventReason.Start):
-            hou.SceneViewer.beginStateUndo(self.scene_viewer, "foo")
+            self.setActive(True)
+            #hou.SceneViewer.beginStateUndo(self.scene_viewer, "foo")
             self.onMouseStart(ui_event)
         elif (reason == hou.uiEventReason.Active):
             self.onMouseActive(ui_event)
         elif (reason == hou.uiEventReason.Changed):
             self.curPlane = None
-            hou.SceneViewer.endStateUndo(self.scene_viewer)
+            self.setActive(False)
+            #hou.SceneViewer.endStateUndo(self.scene_viewer)
+        else:
+            self.updateInactive(ui_event)
 
     def onKeyEvent(self, kwargs):
         ui_event = kwargs["ui_event"]
@@ -633,11 +753,19 @@ class State(object):
         """ This callback is used for rendering the drawables
         """
         handle = kwargs["draw_handle"]
+        if not self.active:
+            hou.GeometryDrawable.draw(self.point_drawable, handle, self.point_params)
         self.measurements.draw(handle)
 
     def onDrawInterrupt(self, kwargs):
         handle = kwargs["draw_handle"]
         self.measurements.drawInterrupt(handle, self.geometry_viewport)
+
+menu_item_info = [
+    ('text_size_05', '0.5', 'BUTTONS_calc'), 
+    ('text_size_1', '1.0', 'BUTTONS_calc'), 
+    ('text_size_2', '2.0', 'BUTTONS_calc'), 
+    ('text_size_5', '5.0', 'BUTTONS_calc')]
 
 def createViewerStateTemplate():
     """ Mandatory entry point to create and return the viewer state 
@@ -650,5 +778,9 @@ def createViewerStateTemplate():
     template = hou.ViewerStateTemplate(state_typename, state_label, state_cat)
     template.bindFactory(State)
     template.bindIcon("MISC_python")
+
+    template.bindParameter( hou.parmTemplateType.Menu, name="text_size_menu", 
+        label="Text Size Presets", default_value='text_size_1', 
+        menu_items=menu_item_info, toolbox=True)
 
     return template
