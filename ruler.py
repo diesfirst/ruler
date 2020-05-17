@@ -82,6 +82,15 @@ def createCircleGeometry():
     hou.Geometry.addAttrib(geo, hou.attribType.Point, "Cd", (1, 0, 0))
     return geo
 
+def createArcGeometry(angle, radius):
+    divs_per_degree = 0.12 #arbitary. works out to 12 divs every 90 degrees
+    geo = hou.Geometry()
+    circle_verb = hou.sopNodeTypeCategory().nodeVerb("circle")
+    hou.SopVerb.setParms(circle_verb, {
+        'type':1, 'arc':1, 'angle':hou.Vector2(0, angle), 'divs':divs_per_degree * angle, 'scale':radius})
+    hou.SopVerb.execute(circle_verb, geo, [])
+    return geo
+
 # TODO: Implement a colored background behind the tail and end to 
 #       show that it is being axis aligned. maybe highlight geometry in so-
 #       me similar way around the spot your measuring from
@@ -213,6 +222,16 @@ class Color(object):
     def getHexStr(self):
         return self.hex_str
 
+def getCameraCancellingScale(translate, model_to_camera, camera_to_ndc, value):
+    #model_to_ndc = translate * model_to_camera * camera_to_ndc #not sure if translate is needed
+    model_to_ndc = model_to_camera * camera_to_ndc
+    w = model_to_ndc.at(3, 3)
+    if (w == 1): # this checks for orthogonality of the matrix. does not feel very robust tho...
+        w = 2 / abs(camera_to_ndc.at(0,0)) #scale ~* orthowidth
+    w *= value 
+    scale = hou.hmath.buildScale(w, w, w)
+    return scale
+
 
 class Plane:
     X, Y, Z = range(0, 3)
@@ -323,15 +342,6 @@ class Measurement(object):
         hou.GeometryDrawable.draw(self.head_spot_drawable, handle, self.spot_params)
         hou.TextDrawable.draw(self.text_drawable, handle, self.text_params)
 
-    def getCameraCancellingScale(self, translate, model_to_camera, camera_to_ndc):
-        model_to_ndc = translate * model_to_camera * camera_to_ndc
-        w = model_to_ndc.at(3, 3)
-        if (w == 1): # this checks for orthogonality of the matrix. does not feel very robust tho...
-            w = 2 / abs(camera_to_ndc.at(0,0)) #scale ~* orthowidth
-        w *= self.spot_size
-        scale = hou.hmath.buildScale(w, w, w)
-        return scale
-
     def setPlane(self, plane):
         self.curPlane = plane
 
@@ -351,13 +361,13 @@ class Measurement(object):
         else:
             translate = hou.hmath.buildTranslate(self.head_pos)
         rotate = hou.hmath.buildRotateZToAxis(initToCurDir)
-        scale = self.getCameraCancellingScale(translate, model_to_camera, camera_to_ndc)
+        scale = getCameraCancellingScale(translate, model_to_camera, camera_to_ndc, self.spot_size)
         transform = rotate * scale * translate
         hou.GeometryDrawable.setTransform(drawable, transform)
 
     def setDiskTransform(self, disk, pos, model_to_camera, camera_to_ndc):
         translate = hou.hmath.buildTranslate(pos)
-        scale = self.getCameraCancellingScale(translate, model_to_camera, camera_to_ndc)
+        scale = getCameraCancellingScale(translate, model_to_camera, camera_to_ndc, self.spot_size)
         transform = scale * translate
         hou.GeometryDrawable.setTransform(disk, transform)
 
@@ -485,6 +495,7 @@ class State(object):
     """.format(chr(Key.copy_to_clip), chr(Key.undo), chr(Key.create_line_sops))
     
     planes = (hou.Vector3(1, 0, 0), hou.Vector3(0, 1, 0), hou.Vector3(0, 0, 1))
+    plane_to_next = {Plane.X : hou.Vector3(0, 0, -1), Plane.Y : hou.Vector3(1, 0, 0), Plane.Z : hou.Vector3(1, 0, 0)}
 
     def __init__(self, state_name, scene_viewer):
         self.state_name = state_name
@@ -497,11 +508,15 @@ class State(object):
         self.curPlane = None
         self.show(False)
         self.angle_snapping = False
+        self.cur_angle = 0
         point = createPointGeometry()
         self.point_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Point, "point", point)
         self.point_params = {'style': hou.drawableGeometryPointStyle.SmoothCircle, 'radius': 2, 'color2': hou.Vector4(0, 1, 1, 1),
                 'color1' : hou.Vector4(.9, .8, .1, 1.), 'highlight_mode':hou.drawableHighlightMode.MatteOverGlow, 'glow_width': 20}
         self.active = False
+        self.angle_text_drawable = hou.TextDrawable(self.scene_viewer, "angle_text")
+        self.angle_text_params = {'text': "Fizz", 'translate': hou.Vector3(0.0, 0.0, 0.0)}
+        self.arc_drawable = hou.GeometryDrawable(self.scene_viewer, hou.drawableGeometryType.Line, "arc")
                 
     def show(self, visible):
         """ Display or hide drawables.
@@ -562,6 +577,38 @@ class State(object):
         for p in parms:
             hou.Parm.hide(p, True)
 
+    def drawAngle(self, angle_snapping_on, handle):
+        if not angle_snapping_on: 
+            return
+        if (self.curPlane == None):
+            return
+        plane_vec = State.planes[self.curPlane]
+        arc_geo = createArcGeometry(self.cur_angle, 1)
+        hou.GeometryDrawable.setGeometry(self.arc_drawable, arc_geo)
+
+        color = hou.Vector4(plane_vec[0], plane_vec[1], plane_vec[2], 1)
+        scale = self.measurements.current().getLength() * .5
+
+        translate = hou.hmath.buildTranslate(self.measurements.current().getTailPos())
+        rotate = hou.hmath.buildRotateZToAxis(plane_vec)
+        transform = rotate * translate
+
+        #self.angle_text_drawable.setTransform(transform)
+        #self.angle_text_drawable.({'text':"FOOO"}, )
+
+        self.arc_drawable.setTransform(transform)
+        self.arc_drawable.setParams({'line_width':3, 'color1':color, 'style':(5, 20), 'fade_factor':0.5, 'scale':hou.Vector3(scale, scale, scale)})
+
+        text = str(self.cur_angle) + u'\u00b0'
+        font_string = '<font size="{1}"<b> {0} </b></font>'.format(text.encode('utf-8'), 30)
+        self.angle_text_params['text'] = font_string
+
+        self.angle_text_drawable.show(True)
+        self.arc_drawable.show(True)
+
+        self.arc_drawable.draw(handle)
+        self.angle_text_drawable.draw(handle, self.angle_text_params)
+
 
     def getMousePos(self, ui_event):
         device = hou.UIEvent.device(ui_event)
@@ -587,29 +634,32 @@ class State(object):
         else:
             return self.intersectWithPlane(origin, ray)
 
+    # TODO: modify this to check ALL intersections, and then choose the closest one to this initial intersection
     def getIntersectionAngleSnap(self, ui_event):
         origin, ray = hou.ViewerEvent.ray(ui_event)
         init_pos = self.getIntersectionRegular(ui_event).pos
         measurement_vec = init_pos - self.measurements.current().getTailPos()
         measurement_vec[self.curPlane] = 0; #project onto plane
         plane_normal = State.planes[self.curPlane]
-        plane_vec = State.planes[(self.curPlane + 1) % 3] #the vector that lies in the plane we will be finding the angle too
+#        plane_vec = State.planes[(self.curPlane + 1) % 3] #the vector that lies in the plane we will be finding the angle too
+        plane_vec = State.plane_to_next[self.curPlane]
         # just going to use the normal vector of the "next" plane for now
         angle = hou.Vector3.angleTo(measurement_vec, plane_vec)
         assert angle >= 0
         below_15 = (int(angle) / 15) * 15
         above_15 = below_15 + 15
         closest_angle = below_15 if angle - below_15 < 7.5 else above_15
+
+        if hou.Vector3.cross(plane_vec, measurement_vec).dot(plane_normal) < 0:
+            closest_angle = 360 - closest_angle #need this correction to span the full circle of angles
+        self.cur_angle = closest_angle
+
         rot = hou.hmath.buildRotateAboutAxis(plane_normal, closest_angle)
         vec = plane_vec * rot
         vec *= measurement_vec.length()
-        if measurement_vec[(self.curPlane + 2) % 3] < 0:
-            vec[(self.curPlane + 2) % 3] *= -1 #need this correction to span the full circle of angles
         vec += self.measurements.current().getTailPos()
         vec[self.curPlane] = origin[self.curPlane]
         direction = plane_normal if hou.Vector3.dot(plane_normal, origin) < 0 else plane_normal * -1
-        print vec 
-        print direction
         if self.geo_intersector.intersect(vec, direction):
             return Intersection(self.geo_intersector.position, None)
         else:
@@ -702,9 +752,14 @@ class State(object):
         self.measurements.current().update(intersection, screen_pos, self.getModelToCamera(), self.getCameraToNDC(), self.scene_viewer)
         self.show(True)
 
+    def setAngleTextPos(self, ui_event):
+        dev = hou.UIEvent.device(ui_event)
+        self.angle_text_params['translate'] = hou.Vector3(dev.mouseX(), dev.mouseY(), 0)
+
     def onMouseStart(self, ui_event):
         self.measurements.addMeasurement(self.scene_viewer)
         self.setMeasurementPlane(ui_event)
+        self.setAngleTextPos(ui_event)
         intersection = self.getIntersection(ui_event)
         self.measurements.current().setTailPos(intersection.pos)
         if intersection.plane != None:
@@ -756,6 +811,7 @@ class State(object):
         if not self.active:
             hou.GeometryDrawable.draw(self.point_drawable, handle, self.point_params)
         self.measurements.draw(handle)
+        self.drawAngle(self.angle_snapping, handle)
 
     def onDrawInterrupt(self, kwargs):
         handle = kwargs["draw_handle"]
