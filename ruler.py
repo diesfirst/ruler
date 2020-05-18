@@ -240,7 +240,7 @@ class Measurement(object):
         self.tail_disk_drawable = None
         self.head_disk_drawable = None
         self.text_drawable = hou.TextDrawable(scene_viewer, "text_drawable")
-        self.text_params = {'text': None, 'translate': hou.Vector3(0.0, 0.0, 0.0)}
+        self.text_params = {'text': None, 'translate': hou.Vector3(0.0, 0.0, 0.0), 'highlight_mode':hou.drawableHighlightMode.MatteOverGlow, 'glow_width':10, 'color2':hou.Vector4(0,0,0,0.5)}
         self.spot_params = {'color1': color.getVec(), 'fade_factor': 0.5}
         self.line_params = {'line_width': 4.0, 'style': (10.0, 5.0), 'color1': color.getVec(),  'fade_factor':0.3}
         self.tail_pos = hou.Vector3(0.0, 0.0, 0.0)
@@ -497,7 +497,7 @@ class State(object):
                 'color1' : hou.Vector4(.9, .8, .1, 1.), 'highlight_mode':hou.drawableHighlightMode.MatteOverGlow, 'glow_width': 20}
         self.active = False
         self.angle_text_drawable = hou.TextDrawable(self.scene_viewer, "angle_text")
-        self.angle_text_params = {'text': "Fizz", 'translate': hou.Vector3(0.0, 0.0, 0.0)}
+        self.angle_text_params = {'text': "Fizz", 'translate': hou.Vector3(0.0, 0.0, 0.0),'highlight_mode':hou.drawableHighlightMode.MatteOverGlow, 'glow_width':10, 'color2':hou.Vector4(0,0,0,0.5) }
         self.arc_drawable = hou.GeometryDrawable(self.scene_viewer, hou.drawableGeometryType.Line, "arc")
                 
     def show(self, visible):
