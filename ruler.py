@@ -208,8 +208,8 @@ class Color(object):
         return self.hex_str
 
 def getCameraCancellingScale(translate, model_to_camera, camera_to_ndc, value):
-    #model_to_ndc = translate * model_to_camera * camera_to_ndc #not sure if translate is needed
-    model_to_ndc = model_to_camera * camera_to_ndc
+    model_to_ndc = translate * model_to_camera * camera_to_ndc #not sure if translate is needed
+    #model_to_ndc = model_to_camera * camera_to_ndc
     w = model_to_ndc.at(3, 3)
     if (w == 1): # this checks for orthogonality of the matrix. does not feel very robust tho...
         w = 2 / abs(camera_to_ndc.at(0,0)) #scale ~* orthowidth
