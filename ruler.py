@@ -20,6 +20,7 @@ pysop_string = """
 tail = hou.Vector3({})
 head = hou.Vector3({})
 color = hou.Vector3({})
+name = "{}"
 
 length = hou.Vector3.length(head - tail)
 
@@ -39,9 +40,11 @@ hou.Face.addVertex(line, p2)
 
 hou.Geometry.addAttrib(geo, hou.attribType.Prim, "length", 0.0)
 hou.Geometry.addAttrib(geo, hou.attribType.Prim, "Cd", hou.Vector3())
+hou.Geometry.addAttrib(geo, hou.attribType.Prim, "name", "")
 
 hou.Prim.setAttribValue(line, "length", length)
 hou.Prim.setAttribValue(line, "Cd", color)
+hou.Prim.setAttribValue(line, "name", name)
 """
 
 def createSphereGeometry():
@@ -217,7 +220,6 @@ def getCameraCancellingScale(translate, model_to_camera, camera_to_ndc, value):
     scale = hou.hmath.buildScale(w, w, w)
     return scale
 
-
 class Plane:
     X, Y, Z = range(0, 3)
 
@@ -241,8 +243,8 @@ class Measurement(object):
         self.head_disk_drawable = None
         self.text_drawable = hou.TextDrawable(scene_viewer, "text_drawable")
         self.text_params = {'text': None, 'translate': hou.Vector3(0.0, 0.0, 0.0), 'highlight_mode':hou.drawableHighlightMode.MatteOverGlow, 'glow_width':10, 'color2':hou.Vector4(0,0,0,0.5)}
-        self.spot_params = {'color1': color.getVec(), 'fade_factor': 0.5}
-        self.line_params = {'line_width': 4.0, 'style': (10.0, 5.0), 'color1': color.getVec(),  'fade_factor':0.3}
+        self.spot_params = {'color1': color.getVec(), 'fade_factor': 0.5,'highlight_mode':hou.drawableHighlightMode.MatteOverGlow, 'glow_width':5 }
+        self.line_params = {'line_width': 4.0, 'style': (10.0, 5.0), 'color1': color.getVec(),  'fade_factor':0.3, 'highlight_mode':hou.drawableHighlightMode.MatteOverGlow, 'glow_width':5}
         self.tail_pos = hou.Vector3(0.0, 0.0, 0.0)
         self.head_pos = hou.Vector3(0.0, 0.0, 0.0)
         self.spot_size = 0.01
@@ -252,6 +254,7 @@ class Measurement(object):
         self.text = Measurement.default_text
         self.curPlane = None
         self.angle_snapping = False
+        self.name = ""
         self.updateTextField()
 
     def getLength(self):
@@ -427,6 +430,10 @@ class MeasurementContainer(object):
         for m in self.measurements: 
             m.show(False)
 
+    def removeAll(self):
+        while (self.count() > 0):
+            self.removeMeasurement()
+
     def count(self):
         return len(self.measurements)
 
@@ -467,6 +474,7 @@ class Key():
     copy_to_clip = 113 # q
     undo = 122 # z
     create_line_sops = 97 # a
+    name_measurement = 110 # n
 
 class State(object):
     msg = """
@@ -474,7 +482,8 @@ class State(object):
     Press the '{}' key to copy the last measurement to clip board.
     Press the '{}' key to undo the most recent measurement.
     Press the '{}' key to drop a sop containing lines representing all measurements.
-    """.format(chr(Key.copy_to_clip), chr(Key.undo), chr(Key.create_line_sops))
+    Press the '{}' key to name the last measurement.
+    """.format(chr(Key.copy_to_clip), chr(Key.undo), chr(Key.create_line_sops), chr(Key.name_measurement))
     
     planes = (hou.Vector3(1, 0, 0), hou.Vector3(0, 1, 0), hou.Vector3(0, 0, 1))
     plane_to_next = {Plane.X : hou.Vector3(0, 0, -1), Plane.Y : hou.Vector3(1, 0, 0), Plane.Z : hou.Vector3(1, 0, 0)}
@@ -512,23 +521,12 @@ class State(object):
         self.active = val
         hou.GeometryDrawable.show(self.point_drawable, not val)
 
-#not used currently
-    def createLineSop(self, measurement):
-        network = hou.SceneViewer.pwd(self.scene_viewer)
-        line_node = hou.Node.createNode(network, "line")
-        length_parm = hou.SopNode.parm(line_node, "dist")
-        origin_parm = hou.SopNode.parmTuple(line_node, "origin")
-        dir_parm = hou.SopNode.parmTuple(line_node, "dir")
-        hou.Parm.set(length_parm, measurement.getLength())
-        hou.ParmTuple.set(origin_parm, measurement.getTailPos())
-        hou.ParmTuple.set(dir_parm, measurement.getDir())
-        hou.Node.moveToGoodPosition(line_node)
-
     def generatePythonSopCode(self, measurement):
         tail_pos = measurement.getTailPos()
         head_pos = measurement.getHeadPos()
         color = measurement.getColor()
-        string = pysop_string.format(tail_pos, head_pos, color)
+        name = measurement.name
+        string = pysop_string.format(tail_pos, head_pos, color, name)
         return string
 
     def createSop(self, measurement, network, merge, count):
@@ -776,6 +774,11 @@ class State(object):
                 return True
             if device.keyValue() == Key.create_line_sops:
                 self.createSops()
+                self.measurements.removeAll()
+            if device.keyValue() == Key.name_measurement:
+                name = hou.ui.readInput("Enter a name for the last measurement.", default_choice = 0)[1]
+                print name
+                self.measurements.current().name = name
         return False 
 
     def onKeyTransitEvent(self, kwargs):
