@@ -44,7 +44,6 @@ hou.Prim.setAttribValue(line, "length", length)
 hou.Prim.setAttribValue(line, "Cd", color)
 """
 
-
 def createSphereGeometry():
     geo = hou.Geometry()
     sphere_verb = hou.sopNodeTypeCategory().nodeVerb("sphere")
@@ -70,8 +69,8 @@ def createFrustumGeometry():
 
 def createPointGeometry():
     geo = hou.Geometry()
-    point = hou.Geometry.createPoint(geo)
-    return geo;
+    hou.Geometry.createPoint(geo)
+    return geo
 
 def createCircleGeometry():
     geo = hou.Geometry()
@@ -94,19 +93,6 @@ def createArcGeometry(angle, radius):
 # TODO: Implement a colored background behind the tail and end to 
 #       show that it is being axis aligned. maybe highlight geometry in so-
 #       me similar way around the spot your measuring from
-
-def makeConcentricDisk(parms):
-    r = parms["radius"]
-    divs = parms["divs"]
-    arcs = parms["arcs"]
-    pi = m.pi
-    arc_len = 2 * pi / arcs
-    div_len = r / float(divs)
-    for i in range(divs):
-        for j in range(arcs):
-            point = hou.Geometry.createPoint(geo)
-            pos = hou.Vector3(m.cos(j * arc_len), m.sin(j * arc_len), 0.0) * i * div_len
-            hou.Point.setPosition(point, pos)
 
 class DiskMaker(object):
     def __init__(self, radius, divs, arcs, color, gamma):
@@ -136,7 +122,6 @@ class DiskMaker(object):
                 
     def makeFirstRing(self, geo, arcs):
         points = hou.Geometry.points(geo)
-        p0 = points[0]
         for i in range(1, arcs):
             prim = hou.Geometry.createPolygon(geo)
             hou.Polygon.addVertex(prim, points[0])
@@ -242,10 +227,8 @@ class Measurement(object):
     disk_maker = DiskMaker(10, 8, 20, (1.0, 1.0, 1.0), 3)
 
     def __init__(self, scene_viewer, color):
-        sphere = createSphereGeometry()
         line = createLineGeometry()
         frustum = createFrustumGeometry()
-        circle = createCircleGeometry()
         self.color = color
         self.disk_x = Measurement.disk_maker.makeDisk((1, 0, 0), (.7, .2, .2))
         self.disk_y = Measurement.disk_maker.makeDisk((0, 1, 0), (.2, .7, .2))
@@ -454,7 +437,6 @@ class MeasurementContainer(object):
 
     def removeMeasurement(self):
         if self.count() < 1: return
-        colorIndex = (self.count() - 1) % len(MeasurementContainer.colors)
         self.current().show(False)
         self.measurements.pop()
         hou.GeometryViewport.draw(self.viewport)
@@ -639,7 +621,7 @@ class State(object):
         origin, ray = hou.ViewerEvent.ray(ui_event)
         init_pos = self.getIntersectionRegular(ui_event).pos
         measurement_vec = init_pos - self.measurements.current().getTailPos()
-        measurement_vec[self.curPlane] = 0; #project onto plane
+        measurement_vec[self.curPlane] = 0 #project onto plane
         plane_normal = State.planes[self.curPlane]
 #        plane_vec = State.planes[(self.curPlane + 1) % 3] #the vector that lies in the plane we will be finding the angle too
         plane_vec = State.plane_to_next[self.curPlane]
@@ -720,7 +702,7 @@ class State(object):
     def onGenerate(self, kwargs):
         """ Assign the geometry to drawabled
         """
-        self.measurement = 0.0;
+        self.measurement = 0.0
         self.scene_viewer.setPromptMessage( State.msg )
         self.current_node = hou.SceneViewer.pwd(self.scene_viewer).displayNode()
         self.geometry = hou.SopNode.geometry(self.current_node)
