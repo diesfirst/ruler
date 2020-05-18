@@ -475,6 +475,7 @@ class Key():
     undo = 122 # z
     create_line_sops = 97 # a
     name_measurement = 110 # n
+    pop_copy = 102 # f
 
 class State(object):
     msg = """
@@ -483,7 +484,8 @@ class State(object):
     Press the '{}' key to undo the most recent measurement.
     Press the '{}' key to drop a sop containing lines representing all measurements.
     Press the '{}' key to name the last measurement.
-    """.format(chr(Key.copy_to_clip), chr(Key.undo), chr(Key.create_line_sops), chr(Key.name_measurement))
+    Press the '{}' key to copy to clip and remove last measurement.
+    """.format(chr(Key.copy_to_clip), chr(Key.undo), chr(Key.create_line_sops), chr(Key.name_measurement), chr(Key.pop_copy))
     
     planes = (hou.Vector3(1, 0, 0), hou.Vector3(0, 1, 0), hou.Vector3(0, 0, 1))
     plane_to_next = {Plane.X : hou.Vector3(0, 0, -1), Plane.Y : hou.Vector3(1, 0, 0), Plane.Z : hou.Vector3(1, 0, 0)}
@@ -508,6 +510,7 @@ class State(object):
         self.angle_text_drawable = hou.TextDrawable(self.scene_viewer, "angle_text")
         self.angle_text_params = {'text': "Fizz", 'translate': hou.Vector3(0.0, 0.0, 0.0),'highlight_mode':hou.drawableHighlightMode.MatteOverGlow, 'glow_width':10, 'color2':hou.Vector4(0,0,0,0.5) }
         self.arc_drawable = hou.GeometryDrawable(self.scene_viewer, hou.drawableGeometryType.Line, "arc")
+        self.pre_measurement = False
                 
     def show(self, visible):
         """ Display or hide drawables.
@@ -752,9 +755,13 @@ class State(object):
             self.setActive(True)
             #hou.SceneViewer.beginStateUndo(self.scene_viewer, "foo")
             self.onMouseStart(ui_event)
+            self.pre_measurement = True
         elif (reason == hou.uiEventReason.Active):
             self.onMouseActive(ui_event)
+            self.pre_measurement = False
         elif (reason == hou.uiEventReason.Changed):
+            if self.pre_measurement:
+                self.measurements.removeMeasurement()
             self.curPlane = None
             self.setActive(False)
             #hou.SceneViewer.endStateUndo(self.scene_viewer)
@@ -775,10 +782,16 @@ class State(object):
             if device.keyValue() == Key.create_line_sops:
                 self.createSops()
                 self.measurements.removeAll()
+                return True
             if device.keyValue() == Key.name_measurement:
                 name = hou.ui.readInput("Enter a name for the last measurement.", default_choice = 0)[1]
-                print name
                 self.measurements.current().name = name
+                return True
+            if device.keyValue() == Key.pop_copy:
+                m = self.measurements.current().getLength()
+                hou.ui.copyTextToClipboard(str(m))
+                self.measurements.removeMeasurement()
+                return True
         return False 
 
     def onKeyTransitEvent(self, kwargs):
