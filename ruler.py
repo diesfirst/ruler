@@ -724,6 +724,8 @@ class State(object):
     def onInterrupt(self,kwargs):
         pass
 
+#FOOO!
+
     def updateInactive(self, ui_event):
         self.setMeasurementPlane(ui_event)
         intersection = self.getIntersection(ui_event)
