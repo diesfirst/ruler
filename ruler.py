@@ -16,37 +16,6 @@ import hou
 import viewerstate.utils as su
 import math as m
 
-pysop_string = """
-tail = hou.Vector3({})
-head = hou.Vector3({})
-color = hou.Vector3({})
-name = "{}"
-
-length = hou.Vector3.length(head - tail)
-
-node = hou.pwd()
-geo = node.geometry()
-
-line = hou.Geometry.createPolygon(geo)
-
-p1 = hou.Geometry.createPoint(geo)
-p2 = hou.Geometry.createPoint(geo)
-
-hou.Point.setPosition(p1, tail)
-hou.Point.setPosition(p2, head)
-
-hou.Face.addVertex(line, p1)
-hou.Face.addVertex(line, p2)
-
-hou.Geometry.addAttrib(geo, hou.attribType.Prim, "length", 0.0)
-hou.Geometry.addAttrib(geo, hou.attribType.Prim, "Cd", hou.Vector3())
-hou.Geometry.addAttrib(geo, hou.attribType.Prim, "name", "")
-
-hou.Prim.setAttribValue(line, "length", length)
-hou.Prim.setAttribValue(line, "Cd", color)
-hou.Prim.setAttribValue(line, "name", name)
-"""
-
 def createSphereGeometry():
     geo = hou.Geometry()
     sphere_verb = hou.sopNodeTypeCategory().nodeVerb("sphere")
@@ -481,7 +450,6 @@ class Intersection():
 class Key():
     copy_to_clip = 113 # q
     undo = 122 # z
-    create_line_sops = 97 # a
     name_measurement = 110 # n
     pop_copy = 102 # f
 
@@ -495,10 +463,9 @@ class State(object):
     Click and drag on the geometry to measure it.
     Press the '{}' key to copy the last measurement to clip board.
     Press the '{}' key to undo the most recent measurement.
-    Press the '{}' key to drop a sop containing lines representing all measurements.
     Press the '{}' key to name the last measurement.
     Press the '{}' key to copy to clip and remove last measurement.
-    """.format(chr(Key.copy_to_clip), chr(Key.undo), chr(Key.create_line_sops), chr(Key.name_measurement), chr(Key.pop_copy))
+    """.format(chr(Key.copy_to_clip), chr(Key.undo), chr(Key.name_measurement), chr(Key.pop_copy))
     
     planes = (hou.Vector3(1, 0, 0), hou.Vector3(0, 1, 0), hou.Vector3(0, 0, 1))
     plane_to_next = {Plane.X : hou.Vector3(0, 0, -1), Plane.Y : hou.Vector3(1, 0, 0), Plane.Z : hou.Vector3(1, 0, 0)}
@@ -536,42 +503,6 @@ class State(object):
     def setActive(self, val):
         self.active = val
         hou.GeometryDrawable.show(self.point_drawable, not val)
-
-    def generatePythonSopCode(self, measurement):
-        tail_pos = measurement.getTailPos()
-        head_pos = measurement.getHeadPos()
-        color = measurement.getColor()
-        name = measurement.name
-        string = pysop_string.format(tail_pos, head_pos, color, name)
-        return string
-
-    def createSop(self, measurement, network, merge, count):
-        python_sop = hou.Node.createNode(network, "python", "measurement" + str(count))
-        code_parm = hou.Node.parm(python_sop, "python")
-        code = self.generatePythonSopCode(measurement)
-        hou.Parm.set(code_parm, code)
-        hou.Node.moveToGoodPosition(python_sop)
-        hou.Node.setInput(merge, count, python_sop)
-        return python_sop
-
-    def createSops(self):
-        network = hou.SceneViewer.pwd(self.scene_viewer)
-        subnet = hou.Node.createNode(network, "subnet", "measurements1")
-        merge = hou.Node.createNode(subnet, "merge")
-        output = hou.Node.createNode(subnet, "output")
-        hou.Node.setInput(output, 0, merge)
-        sops = []
-        count = 0
-        for measurement in self.measurements:
-            sops.append(self.createSop(measurement, subnet, merge, count))
-            count += 1
-        hou.Node.moveToGoodPosition(merge)
-        hou.Node.moveToGoodPosition(output)
-        hou.Node.moveToGoodPosition(subnet)
-
-        parms = hou.Node.parms(subnet)
-        for p in parms:
-            hou.Parm.hide(p, True)
 
     def drawAngle(self, angle_snapping_on, handle):
         if not angle_snapping_on: 
@@ -793,10 +724,6 @@ class State(object):
             if device.keyValue() == Key.copy_to_clip:
                 m = self.measurements.current().getLength()
                 hou.ui.copyTextToClipboard(str(m))
-                return True
-            if device.keyValue() == Key.create_line_sops:
-                self.createSops()
-                self.measurements.removeAll()
                 return True
             if device.keyValue() == Key.name_measurement:
                 name = hou.ui.readInput("Enter a name for the last measurement.", default_choice = 0)[1]
