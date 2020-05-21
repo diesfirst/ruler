@@ -16,6 +16,20 @@ import hou
 import viewerstate.utils as su
 import math as m
 
+key_context = "h.pane.gview.state.sop.mb::ruler"
+hou.hotkeys.addContext(
+        key_context, "Ruler State Operation", "These keys apply to the Ruler state operation.")
+
+class Key():
+    copy_to_clip = key_context + ".copy_to_clip"
+    undo = key_context + ".undo"
+    pop_copy = key_context + ".pop_copy"
+
+hou.hotkeys.addCommand(Key.copy_to_clip, "Copy", "Copy last measurement to clip board.", ["q",])
+hou.hotkeys.addCommand(Key.undo, "Undo", "Remove last measurement.", ["z",])
+hou.hotkeys.addCommand(Key.pop_copy, "PopCopy", "Copy last measurement and remove it.", ["f",])
+
+
 def createSphereGeometry():
     geo = hou.Geometry()
     sphere_verb = hou.sopNodeTypeCategory().nodeVerb("sphere")
@@ -143,7 +157,6 @@ class DiskMaker(object):
 
     def setColor(self, color):
         self.parms["color"] = color
-        print color
 
     def makeDisk(self, direction, color):
         self.setColor(color)
@@ -193,7 +206,7 @@ class Plane:
     X, Y, Z = range(0, 3)
 
 class Measurement(object):
-    default_font_size = 30.0
+    default_font_size = 12.0
     default_text = "default text"
     disk_maker = DiskMaker(10, 8, 20, (1.0, 1.0, 1.0), 3)
 
@@ -271,7 +284,7 @@ class Measurement(object):
         self.text_params['translate'][1] = y
 
     def updateTextField(self):
-        font_string = '<font size="{1}" color="{2}"><b> {0} </b></font>'.format(self.text, self.font_size, self.font_color)
+        font_string = '<font size={1} color="{2}"><b> {0} </b></font>'.format(self.text, self.font_size, self.font_color)
         self.text_params['text'] = font_string
 
     def draw( self, handle ):
@@ -304,10 +317,8 @@ class Measurement(object):
     def angleSnapping(self, yes):
         if (yes):
             self.angle_snapping = True
-            print "Angle snapping on"
         else:
             self.angle_snapping = False
-            print "Angle snapping off"
 
     def setSpotTransform(self, drawable, model_to_camera, camera_to_ndc):
         initToCurDir = (self.head_pos - self.tail_pos).normalized()
@@ -352,7 +363,7 @@ class Measurement(object):
         elif plane == Plane.Z: 
             self.head_disk_drawable = hou.GeometryDrawable(scene_viewer, hou.drawableGeometryType.Line, "circle", self.disk_z)
         else:
-            print "Should not be called"
+            return
 
     def updateHeadPos(self, pos):
         self.head_pos = pos 
@@ -447,12 +458,6 @@ class Intersection():
         self.has_plane = (plane != None)
         self.plane = plane
 
-class Key():
-    copy_to_clip = 113 # q
-    undo = 122 # z
-    name_measurement = 110 # n
-    pop_copy = 102 # f
-
 class Mode:
     doing_nothing = 0 
     pre_measurement = 1
@@ -463,9 +468,9 @@ class State(object):
     Click and drag on the geometry to measure it.
     Press the '{}' key to copy the last measurement to clip board.
     Press the '{}' key to undo the most recent measurement.
-    Press the '{}' key to name the last measurement.
     Press the '{}' key to copy to clip and remove last measurement.
-    """.format(chr(Key.copy_to_clip), chr(Key.undo), chr(Key.name_measurement), chr(Key.pop_copy))
+    Hold down the Ctrl key to turn on angle snapping.
+    """.format(hou.hotkeys.assignments(Key.copy_to_clip)[0], hou.hotkeys.assignments(Key.undo)[0], hou.hotkeys.assignments(Key.pop_copy)[0])
     
     planes = (hou.Vector3(1, 0, 0), hou.Vector3(0, 1, 0), hou.Vector3(0, 0, 1))
     plane_to_next = {Plane.X : hou.Vector3(0, 0, -1), Plane.Y : hou.Vector3(1, 0, 0), Plane.Z : hou.Vector3(1, 0, 0)}
@@ -718,18 +723,16 @@ class State(object):
         ui_event = kwargs["ui_event"]
         device = ui_event.device()
         if device.isKeyPressed():
-            if device.keyValue() == Key.undo:
+            if hou.hotkeys.isKeyMatch(device.keyString(), Key.undo):
                 self.measurements.removeMeasurement()
                 return True
-            if device.keyValue() == Key.copy_to_clip:
+            if hou.hotkeys.isKeyMatch(device.keyString(), Key.copy_to_clip):
+                if self.measurements.count() < 1: return
                 m = self.measurements.current().getLength()
                 hou.ui.copyTextToClipboard(str(m))
                 return True
-            if device.keyValue() == Key.name_measurement:
-                name = hou.ui.readInput("Enter a name for the last measurement.", default_choice = 0)[1]
-                self.measurements.current().name = name
-                return True
-            if device.keyValue() == Key.pop_copy:
+            if hou.hotkeys.isKeyMatch(device.keyString(), Key.pop_copy):
+                if self.measurements.count() < 1: return
                 m = self.measurements.current().getLength()
                 hou.ui.copyTextToClipboard(str(m))
                 self.measurements.removeMeasurement()
@@ -783,6 +786,6 @@ def createViewerStateTemplate():
     #    label="Text Size Presets", default_value='text_size_1', 
     #    menu_items=menu_item_info, toolbox=True)
 
-    template.bindParameter( hou.parmTemplateType.Toggle, name="show_text", label="Show Text", default_value=True)
+    #   template.bindParameter( hou.parmTemplateType.Toggle, name="show_text", label="Show Text", default_value=True)
 
     return template
