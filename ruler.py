@@ -29,6 +29,7 @@ hou.hotkeys.addCommand(Key.copy_to_clip, "Copy", "Copy last measurement to clip 
 hou.hotkeys.addCommand(Key.undo, "Undo", "Remove last measurement.", ["z",])
 hou.hotkeys.addCommand(Key.pop_copy, "PopCopy", "Copy last measurement and remove it.", ["f",])
 
+print "Reloaded whole state"
 
 def createSphereGeometry():
     geo = hou.Geometry()
@@ -661,9 +662,9 @@ class State(object):
 
     def onResume(self, kwargs):
         self.scene_viewer.setPromptMessage( State.msg )
-        self.current_node = hou.SceneViewer.pwd(self.scene_viewer).displayNode()
-        self.geometry = hou.SopNode.geometry(self.current_node)
-        self.geo_intersector = su.GeometryIntersector(self.geometry, self.scene_viewer)
+#        self.current_node = hou.SceneViewer.pwd(self.scene_viewer).displayNode()
+#        self.geometry = hou.SopNode.geometry(self.current_node)
+#        self.geo_intersector = su.GeometryIntersector(self.geometry, self.scene_viewer)
         self.show(True)
 
     def onExit(self, kwargs):
