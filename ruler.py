@@ -228,7 +228,7 @@ class Measurement(object):
     default_text = "default text"
     disk_maker = DiskMaker(10, 8, 20, (1.0, 1.0, 1.0), 3)
 
-    def __init__(self, scene_viewer, color):
+    def __init__(self, scene_viewer, color, show_text):
         line = createLineGeometry()
         frustum = createFrustumGeometry()
         self.color = color
@@ -255,6 +255,7 @@ class Measurement(object):
         self.curPlane = None
         self.angle_snapping = False
         self.name = ""
+        self.show_text = show_text
         self.updateTextField()
 
     def getLength(self):
@@ -275,7 +276,7 @@ class Measurement(object):
     def show(self, visible):
         """ Display or hide drawables.
         """
-        self.text_drawable.show(visible)
+        self.text_drawable.show(self.show_text)
         self.tail_spot_drawable.show(visible)
         self.head_spot_drawable.show(visible)
         self.line_drawable.show(visible)
@@ -421,9 +422,16 @@ class MeasurementContainer(object):
     def __init__(self, viewport):
         self.measurements = []
         self.viewport = viewport
+        self.show_text = True
 
     def showAll(self):
         for m in self.measurements: 
+            m.show(True)
+
+    def showText(self, val):
+        self.show_text = val
+        for m in self.measurements:
+            m.show_text = val
             m.show(True)
 
     def hideAll(self):
@@ -439,7 +447,7 @@ class MeasurementContainer(object):
 
     def addMeasurement(self, scene_viewer):
         colorIndex = self.count() % len(MeasurementContainer.colors)
-        self.measurements.append(Measurement(scene_viewer, MeasurementContainer.colors[colorIndex]))
+        self.measurements.append(Measurement(scene_viewer, MeasurementContainer.colors[colorIndex], self.show_text))
         self.measurements[-1].show(False)
 
     def removeMeasurement(self):
@@ -477,6 +485,11 @@ class Key():
     name_measurement = 110 # n
     pop_copy = 102 # f
 
+class Mode:
+    doing_nothing = 0 
+    pre_measurement = 1
+    measuring = 2
+
 class State(object):
     msg = """
     Click and drag on the geometry to measure it.
@@ -510,7 +523,7 @@ class State(object):
         self.angle_text_drawable = hou.TextDrawable(self.scene_viewer, "angle_text")
         self.angle_text_params = {'text': "Fizz", 'translate': hou.Vector3(0.0, 0.0, 0.0),'highlight_mode':hou.drawableHighlightMode.MatteOverGlow, 'glow_width':10, 'color2':hou.Vector4(0,0,0,0.5) }
         self.arc_drawable = hou.GeometryDrawable(self.scene_viewer, hou.drawableGeometryType.Line, "arc")
-        self.pre_measurement = False
+        self.mode = Mode.doing_nothing
                 
     def show(self, visible):
         """ Display or hide drawables.
@@ -724,8 +737,6 @@ class State(object):
     def onInterrupt(self,kwargs):
         pass
 
-#FOOO!
-
     def updateInactive(self, ui_event):
         self.setMeasurementPlane(ui_event)
         intersection = self.getIntersection(ui_event)
@@ -757,12 +768,14 @@ class State(object):
             self.setActive(True)
             #hou.SceneViewer.beginStateUndo(self.scene_viewer, "foo")
             self.onMouseStart(ui_event)
-            self.pre_measurement = True
+            self.mode = Mode.pre_measurement
         elif (reason == hou.uiEventReason.Active):
-            self.onMouseActive(ui_event)
-            self.pre_measurement = False
+            if self.mode == Mode.pre_measurement:
+                self.mode = Mode.measuring
+            if self.mode == Mode.measuring:
+                self.onMouseActive(ui_event)
         elif (reason == hou.uiEventReason.Changed):
-            if self.pre_measurement:
+            if self.mode == Mode.pre_measurement:
                 self.measurements.removeMeasurement()
             self.curPlane = None
             self.setActive(False)
@@ -803,6 +816,16 @@ class State(object):
             self.angleSnapping(True)
         if dev.isKeyUp() and self.angle_snapping: 
             self.angleSnapping(False)
+
+    def onParmChangeEvent(self, kwargs):
+        parm_name = kwargs["parm_name"]
+        parm_value = kwargs["parm_value"]
+        if parm_name == "show_text":
+            if parm_value == True:
+                self.measurements.showText(True)
+            else:
+                self.measurements.showText(False)
+            self.geometry_viewport.draw()
             
     def onDraw( self, kwargs ):
         """ This callback is used for rendering the drawables
@@ -817,12 +840,6 @@ class State(object):
         handle = kwargs["draw_handle"]
         self.measurements.drawInterrupt(handle, self.geometry_viewport)
 
-menu_item_info = [
-    ('text_size_05', '0.5', 'BUTTONS_calc'), 
-    ('text_size_1', '1.0', 'BUTTONS_calc'), 
-    ('text_size_2', '2.0', 'BUTTONS_calc'), 
-    ('text_size_5', '5.0', 'BUTTONS_calc')]
-
 def createViewerStateTemplate():
     """ Mandatory entry point to create and return the viewer state 
         template to register. """
@@ -835,8 +852,10 @@ def createViewerStateTemplate():
     template.bindFactory(State)
     template.bindIcon("MISC_python")
 
-    template.bindParameter( hou.parmTemplateType.Menu, name="text_size_menu", 
-        label="Text Size Presets", default_value='text_size_1', 
-        menu_items=menu_item_info, toolbox=True)
+    #template.bindParameter( hou.parmTemplateType.Menu, name="text_size_menu", 
+    #    label="Text Size Presets", default_value='text_size_1', 
+    #    menu_items=menu_item_info, toolbox=True)
+
+    template.bindParameter( hou.parmTemplateType.Toggle, name="show_text", label="Show Text", default_value=True)
 
     return template
