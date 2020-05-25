@@ -6,12 +6,6 @@ Author:         michaelb
 Date Created:   March 24, 2020 - 11:28:31
 """
 
-# People are asking for something like this:
-# https://forums.odforce.net/topic/39249-ruler-tool-non-procedurally-measure-a-distance/
-# https://forums.odforce.net/topic/43048-is-there-any-tool-to-measure-distance-between-two-points-in-viewport/
-# https://www.sidefx.com/tutorials/houdini-tutorial-creating-a-measure-distance-tool/
-# Have seen Steven Knipping create a make shift measuring line in a tutorial.
-
 import hou
 import viewerstate.utils as su
 import math as m
@@ -76,10 +70,6 @@ def createArcGeometry(angle, radius):
         'type':1, 'arc':1, 'angle':hou.Vector2(0, angle), 'divs':divs_per_degree * angle, 'scale':radius})
     hou.SopVerb.execute(circle_verb, geo, [])
     return geo
-
-# TODO: Implement a colored background behind the tail and end to 
-#       show that it is being axis aligned. maybe highlight geometry in so-
-#       me similar way around the spot your measuring from
 
 class DiskMaker(object):
     def __init__(self, radius, divs, arcs, color, gamma):
@@ -194,10 +184,9 @@ class Color(object):
         return self.hex_str
 
 def getCameraCancellingScale(translate, model_to_camera, camera_to_ndc, value):
-    model_to_ndc = translate * model_to_camera * camera_to_ndc #not sure if translate is needed
-    #model_to_ndc = model_to_camera * camera_to_ndc
+    model_to_ndc = translate * model_to_camera * camera_to_ndc 
     w = model_to_ndc.at(3, 3)
-    if (w == 1): # this checks for orthogonality of the matrix. does not feel very robust tho...
+    if (w == 1): 
         w = 2 / abs(camera_to_ndc.at(0,0)) #scale ~* orthowidth
     w *= value 
     scale = hou.hmath.buildScale(w, w, w)
@@ -378,12 +367,9 @@ class Measurement(object):
         self.setSpotTransform(self.tail_spot_drawable, model_to_camera, camera_to_ndc)
         self.setSpotTransform(self.head_spot_drawable, model_to_camera, camera_to_ndc)
         self.setLineTransform(self.line_drawable)
-#        self.setPointTransform(self.tail_pos)
         if (plane == None):
             self.head_disk_drawable = None
             return
-#        if plane != self.curPlane:
-#            self.curPlane = plane
         self.setHeadDisk(plane, scene_viewer)
         self.setDiskTransform(self.head_disk_drawable, self.head_pos, model_to_camera, camera_to_ndc)
 
@@ -526,9 +512,6 @@ class State(object):
         rotate = hou.hmath.buildRotateZToAxis(plane_vec)
         transform = rotate * translate
 
-        #self.angle_text_drawable.setTransform(transform)
-        #self.angle_text_drawable.({'text':"FOOO"}, )
-
         self.arc_drawable.setTransform(transform)
         self.arc_drawable.setParams({'line_width':3, 'color1':color, 'style':(5, 20), 'fade_factor':0.5, 'scale':hou.Vector3(scale, scale, scale)})
 
@@ -574,9 +557,7 @@ class State(object):
         measurement_vec = init_pos - self.measurements.current().getTailPos()
         measurement_vec[self.curPlane] = 0 #project onto plane
         plane_normal = State.planes[self.curPlane]
-#        plane_vec = State.planes[(self.curPlane + 1) % 3] #the vector that lies in the plane we will be finding the angle too
         plane_vec = State.plane_to_next[self.curPlane]
-        # just going to use the normal vector of the "next" plane for now
         angle = hou.Vector3.angleTo(measurement_vec, plane_vec)
         assert angle >= 0
         below_15 = (int(angle) / 15) * 15
@@ -584,7 +565,7 @@ class State(object):
         closest_angle = below_15 if angle - below_15 < 7.5 else above_15
 
         if hou.Vector3.cross(plane_vec, measurement_vec).dot(plane_normal) < 0:
-            closest_angle = 360 - closest_angle #need this correction to span the full circle of angles
+            closest_angle = 360 - closest_angle 
         self.cur_angle = closest_angle
 
         rot = hou.hmath.buildRotateAboutAxis(plane_normal, closest_angle)
@@ -662,9 +643,6 @@ class State(object):
 
     def onResume(self, kwargs):
         self.scene_viewer.setPromptMessage( State.msg )
-#        self.current_node = hou.SceneViewer.pwd(self.scene_viewer).displayNode()
-#        self.geometry = hou.SopNode.geometry(self.current_node)
-#        self.geo_intersector = su.GeometryIntersector(self.geometry, self.scene_viewer)
         self.show(True)
 
     def onExit(self, kwargs):
@@ -703,7 +681,6 @@ class State(object):
         reason = hou.UIEvent.reason(ui_event)
         if (reason == hou.uiEventReason.Start):
             self.setActive(True)
-            #hou.SceneViewer.beginStateUndo(self.scene_viewer, "foo")
             self.onMouseStart(ui_event)
             self.mode = Mode.pre_measurement
         elif (reason == hou.uiEventReason.Active):
@@ -716,7 +693,6 @@ class State(object):
                 self.measurements.removeMeasurement()
             self.curPlane = None
             self.setActive(False)
-            #hou.SceneViewer.endStateUndo(self.scene_viewer)
         else:
             self.updateInactive(ui_event)
 
@@ -782,11 +758,5 @@ def createViewerStateTemplate():
     template = hou.ViewerStateTemplate(state_typename, state_label, state_cat)
     template.bindFactory(State)
     template.bindIcon("MISC_python")
-
-    #template.bindParameter( hou.parmTemplateType.Menu, name="text_size_menu", 
-    #    label="Text Size Presets", default_value='text_size_1', 
-    #    menu_items=menu_item_info, toolbox=True)
-
-    #   template.bindParameter( hou.parmTemplateType.Toggle, name="show_text", label="Show Text", default_value=True)
 
     return template
