@@ -23,8 +23,6 @@ hou.hotkeys.addCommand(Key.copy_to_clip, "Copy", "Copy last measurement to clip 
 hou.hotkeys.addCommand(Key.undo, "Undo", "Remove last measurement.", ["z",])
 hou.hotkeys.addCommand(Key.pop_copy, "PopCopy", "Copy last measurement and remove it.", ["f",])
 
-print "Reloaded whole state"
-
 def createSphereGeometry():
     geo = hou.Geometry()
     sphere_verb = hou.sopNodeTypeCategory().nodeVerb("sphere")
@@ -196,11 +194,11 @@ class Plane:
     X, Y, Z = range(0, 3)
 
 class Measurement(object):
-    default_font_size = 12.0
+    default_font_size = 18.0
     default_text = "default text"
     disk_maker = DiskMaker(10, 8, 20, (1.0, 1.0, 1.0), 3)
 
-    def __init__(self, scene_viewer, color, show_text):
+    def __init__(self, scene_viewer, color, show_text, text_scale):
         line = createLineGeometry()
         frustum = createFrustumGeometry()
         self.color = color
@@ -214,7 +212,7 @@ class Measurement(object):
         self.tail_disk_drawable = None
         self.head_disk_drawable = None
         self.text_drawable = hou.TextDrawable(scene_viewer, "text_drawable")
-        self.text_params = {'text': None, 'translate': hou.Vector3(0.0, 0.0, 0.0), 'highlight_mode':hou.drawableHighlightMode.MatteOverGlow, 'glow_width':10, 'color2':hou.Vector4(0,0,0,0.5)}
+        self.text_params = {'text': None, 'translate': hou.Vector3(0.0, 0.0, 0.0), 'highlight_mode':hou.drawableHighlightMode.MatteOverGlow, 'glow_width':10, 'color2':hou.Vector4(0,0,0,0.5), 'scale':hou.Vector3(text_scale, text_scale, text_scale)}
         self.spot_params = {'color1': color.getVec(), 'fade_factor': 0.5,'highlight_mode':hou.drawableHighlightMode.MatteOverGlow, 'glow_width':5 }
         self.line_params = {'line_width': 4.0, 'style': (10.0, 5.0), 'color1': color.getVec(),  'fade_factor':0.3, 'highlight_mode':hou.drawableHighlightMode.MatteOverGlow, 'glow_width':5}
         self.tail_pos = hou.Vector3(0.0, 0.0, 0.0)
@@ -232,6 +230,9 @@ class Measurement(object):
 
     def getLength(self):
         return self.measurement
+
+    def setTextScale(self, scale):
+        self.text_params['scale'] = hou.Vector3(scale, scale, scale)
 
     def getTailPos(self):
         return self.tail_pos
@@ -386,10 +387,11 @@ class MeasurementContainer(object):
             Color(Color.green), Color(Color.yellow),
             Color(Color.pink), Color(Color.purple))
 
-    def __init__(self, viewport):
+    def __init__(self, viewport, text_size):
         self.measurements = []
         self.viewport = viewport
         self.show_text = True
+        self.text_scale = text_size
 
     def showAll(self):
         for m in self.measurements: 
@@ -400,6 +402,11 @@ class MeasurementContainer(object):
         for m in self.measurements:
             m.show_text = val
             m.show(True)
+
+    def setScale(self, scale):
+        self.text_scale = scale
+        for m in self.measurements:
+            m.setTextScale(scale)
 
     def hideAll(self):
         for m in self.measurements: 
@@ -414,7 +421,7 @@ class MeasurementContainer(object):
 
     def addMeasurement(self, scene_viewer):
         colorIndex = self.count() % len(MeasurementContainer.colors)
-        self.measurements.append(Measurement(scene_viewer, MeasurementContainer.colors[colorIndex], self.show_text))
+        self.measurements.append(Measurement(scene_viewer, MeasurementContainer.colors[colorIndex], self.show_text, self.text_scale))
         self.measurements[-1].show(False)
 
     def removeMeasurement(self):
@@ -461,6 +468,7 @@ class State(object):
     
     planes = (hou.Vector3(1, 0, 0), hou.Vector3(0, 1, 0), hou.Vector3(0, 0, 1))
     plane_to_next = {Plane.X : hou.Vector3(0, 0, -1), Plane.Y : hou.Vector3(1, 0, 0), Plane.Z : hou.Vector3(1, 0, 0)}
+    text_size = 1.0 #mutable by changing the text size parm
 
     def __init__(self, state_name, scene_viewer):
         self.state_name = state_name
@@ -468,7 +476,7 @@ class State(object):
         self.geometry_viewport = hou.SceneViewer.curViewport(self.scene_viewer)
         self.geo_intersector = None
         self.geometry = None
-        self.measurements = MeasurementContainer(self.geometry_viewport)
+        self.measurements = MeasurementContainer(self.geometry_viewport, State.text_size)
         self.current_node = None
         self.curPlane = None
         self.show(False)
@@ -631,10 +639,14 @@ class State(object):
     def removeMeasurement(self):
         self.measurements.removeMeasurement()
 
+#    def onEnter(self, kwargs):
+#        """ Assign the geometry to drawabled
+#        """
+#        self.onGenerate(kwargs)
+
     def onGenerate(self, kwargs):
         """ Assign the geometry to drawabled
         """
-        self.measurement = 0.0
         self.scene_viewer.setPromptMessage( State.msg )
         self.current_node = hou.SceneViewer.pwd(self.scene_viewer).displayNode()
         self.geometry = hou.SopNode.geometry(self.current_node)
@@ -733,6 +745,10 @@ class State(object):
             else:
                 self.measurements.showText(False)
             self.geometry_viewport.draw()
+        elif parm_name == "text_size_menu":
+            State.text_size = float(parm_value)
+            self.measurements.setScale(float(parm_value))
+            self.geometry_viewport.draw()
             
     def onDraw( self, kwargs ):
         """ This callback is used for rendering the drawables
@@ -747,6 +763,14 @@ class State(object):
         handle = kwargs["draw_handle"]
         self.measurements.drawInterrupt(handle, self.geometry_viewport)
 
+text_size_item_info = [
+        ('0.25', '0.25'),
+        ('0.375', '0.375'),
+        ('0.5', '0.5'),
+        ('0.75', '0.75'),
+        ('1', '1.0'),
+        ('1.5', '1.5')]
+
 def createViewerStateTemplate():
     """ Mandatory entry point to create and return the viewer state 
         template to register. """
@@ -758,5 +782,7 @@ def createViewerStateTemplate():
     template = hou.ViewerStateTemplate(state_typename, state_label, state_cat)
     template.bindFactory(State)
     template.bindIcon("MISC_python")
+
+    template.bindParameter(hou.parmTemplateType.Menu, name="text_size_menu", label="Text Size", menu_items=text_size_item_info, default_value='1')
 
     return template
