@@ -639,11 +639,6 @@ class State(object):
     def removeMeasurement(self):
         self.measurements.removeMeasurement()
 
-#    def onEnter(self, kwargs):
-#        """ Assign the geometry to drawabled
-#        """
-#        self.onGenerate(kwargs)
-
     def onGenerate(self, kwargs):
         """ Assign the geometry to drawabled
         """

@@ -1,0 +1,12 @@
+import stateutils
+
+# We want to launch a SOP state, so we need to make sure the
+# viewer is at the SOP level first
+viewer = stateutils.findSceneViewer()
+network = viewer.pwd()
+if network.childTypeCategory() != hou.sopNodeTypeCategory():
+        # The user pressed Enter without selecting an object
+        raise hou.Error("You must be in a sop network to use this tool.")
+
+# Set the viewer's current state to my state
+viewer.setCurrentState("mb::ruler")
